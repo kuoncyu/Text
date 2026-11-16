@@ -383,7 +383,7 @@ document.addEventListener('keydown', e => { const t = e.target; if (t && (t.tagN
 // ===== 等比例縮放：遊戲以「虛擬世界」(寬 ≥ 540、高 900 為基準) 運作，畫布再等比例放大到實際螢幕 =====
 // ★ 版本號格式：日期＋英文字母，如 20261113a 是當天第一版、20261113b 是第二版（較新）。
 // ★ 不要手動修改！請在專案資料夾執行  node release.js  ，它會自動產生新版本號、同步 sw.js、並更新 version.json（檔案清單與雜湊值）。
-const APP_VERSION = '20261116c', APP_AUTHOR = '郭柏宏';
+const APP_VERSION = '20261116f', APP_AUTHOR = '郭柏宏';
 const VER_RE = /^\d{8}[a-z]$/;
 const verNewer = (a, b) => VER_RE.test(a) && (!VER_RE.test(b) || a > b);   // a 是否比 b 新（日期大者較新；同一天字母大者較新）
 // ===== 暗物質花費曲線：越高等越貴 =====
@@ -2838,6 +2838,11 @@ const errMsg = e => ({ 'auth/user-not-found': '帳號或密碼錯誤', 'auth/wro
     'auth/operation-not-allowed': '尚未在 Firebase 後台開啟「電子郵件／密碼」登入', 'auth/too-many-requests': '嘗試次數過多，請稍後再試',
     'permission-denied': '沒有權限（請確認 Firestore 規則已發布）', 'create-profile-timeout': '建立玩家資料逾時（Firestore 沒有回應，請檢查資料庫是否建立、規則是否發布）', 'unavailable': 'Firestore 暫時連不上' }[e && e.code] || ('發生錯誤：' + ((e && (e.code || e.message)) || e)));
 
+// ---------- 連線設定 ----------
+// 對戰只走 WebRTC P2P 直連；Firestore 只用在「房間大廳」與「結束後房主回傳戰績」，戰鬥中不讀不寫。
+const NET_ICE = { iceServers: [{ urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] }] };   // 要加 TURN 中繼（連不上時最穩）：在 iceServers 加 { urls: 'turn:…', username: '…', credential: '…' }
+const NET_RELAY = true;   // true：P2P 連不上時，改用 Realtime Database 轉送（不是 Firestore）；false：P2P 連不上就中止本場
+
 // ---------- 樣式 ----------
 document.head.insertAdjacentHTML('beforeend', `<style>
 .inp{width:100%;box-sizing:border-box;margin:6px 0;padding:10px;border-radius:8px;border:1px solid var(--neon-blue);background:#0a0a1a;color:#fff;font-size:1rem;font-family:inherit}
@@ -2959,13 +2964,15 @@ const online = window.online = {
         } catch (e) { msg(errMsg(e)); const b = $('lg-go'); if (b) b.disabled = false; }
     },
     async onLogin(u) {
+        const stg = t => { const m = document.getElementById('lg-msg'); if (m) m.textContent = t; this._stage = t; };
         if (this.free) { try { auth.signOut(); } catch (e) {} return; }   // 單機離線模式中：忽略（晚到的）自動登入，免得蓋掉單機的固定配置
-        try { const bs = await Promise.race([db.collection('banned').doc(u.uid).get(), new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 8000))]); if (bs.exists) { this.user = u; await this.kick(bs.data()); return; } else { const k = JSON.parse(localStorage.getItem('idiomBanned') || 'null'); if (k && k.uid === u.uid) localStorage.removeItem('idiomBanned'); } } catch (e) {}
+        stg('1/4 驗證成功，檢查停權名單…'); try { const bs = await Promise.race([db.collection('banned').doc(u.uid).get(), new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 8000))]); if (bs.exists) { this.user = u; await this.kick(bs.data()); return; } else { const k = JSON.parse(localStorage.getItem('idiomBanned') || 'null'); if (k && k.uid === u.uid) localStorage.removeItem('idiomBanned'); } } catch (e) {}
         this.offline = false; this.user = u; const username = (u.email || '').split('@')[0], ref = db.collection('users').doc(u.uid);
-        let snap;
+        let snap; stg('2/4 讀取玩家資料…');
         try { snap = await Promise.race([ref.get(), new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), navigator.onLine ? 10000 : 1500))]); }
         catch (e) { const m = this.readMirror(); if (m && m.uid === u.uid) { this.user = null; this.startOffline(); return; } throw e; }
         if (!snap.exists) {
+            stg('3/4 這是新帳號，建立玩家資料…');
             const name = this.pending || username;
             this.profile = { username, name, nameLower: name.toLowerCase(), bestScore: 0, totalDM: 0, spentDM: 0, pkWins: 0, pkLosses: 0, tutorialDone: false, createdAt: Date.now() };
             localStorage.removeItem(SAVEKEY); G.resetProgress(); await Promise.race([ref.set(this.profile), new Promise((_, rej) => setTimeout(() => rej(Object.assign(new Error('建立玩家資料逾時'), { code: 'create-profile-timeout' })), 15000))]);
@@ -2979,7 +2986,7 @@ const online = window.online = {
           if (m && m.uid === u.uid && m.dirty && m.save && (m.updatedAt || 0) > (this.profile.updatedAt || 0)) {
             Object.assign(this.profile, m.profile); localStorage.setItem(SAVEKEY, JSON.stringify(m.save)); G.resetProgress(); G.load(); G.applyUpgrades(); this.queuePush(); toast('已同步離線期間的進度');
           } }
-        try { this.isAdmin = (await db.collection('admins').doc(u.uid).get()).exists; } catch (e) { this.isAdmin = false; }
+        stg('4/4 檢查管理員身分…'); try { this.isAdmin = (await db.collection('admins').doc(u.uid).get()).exists; } catch (e) { this.isAdmin = false; }
         this.startListeners(); this.mountChat();
         if (G.gameState === 'LOGIN') G.setState(this.profile.tutorialDone ? 'LOBBY' : 'TUTORIAL');
     },
@@ -3105,8 +3112,20 @@ const online = window.online = {
     // ===== 畫面分派 =====
     renderState(st) {
         this.updateChatVis();
-        ({ LOGIN: () => this.renderLogin(false), RANK: () => this.renderRank('bestScore'), FRIENDS: () => this.renderFriends(), PK: () => this.renderPK(), COOP: () => coop.renderRoom(),
+        ({ LOGIN: () => this.renderLogin(false), RANK: () => this.renderRank('bestScore'), FRIENDS: () => this.renderFriends(), PK: () => this.renderPK(), COOP: () => coop.renderRoom(), MULTI: () => this.renderMulti(), COOPNET: () => coop.renderRoomNet(),
            DB: () => this.renderDB(), DB2: () => this.renderDex('ship'), STATS: () => this.renderStats(), TUTORIAL: () => this.renderTutorial(0), ADMIN: () => this.renderAdmin('users') }[st])();
+    },
+    renderMulti() {
+        const T = (a, b, h, sm, ico, onclick, col = '') => `<div class="tile" style="--a:${a};--b:${b}${col ? ';color:' + col : ''}" onclick="${onclick}"><h4>${h}</h4><small>${sm}</small><span class="ico">${ico}</span></div>`;
+        ui(`<div class="menu-overlay" style="width:min(94vw,520px)"><h2 class="shop-title">多人連線對戰</h2>
+            <p class="muted" style="line-height:1.6;text-align:left">由房主先建立房間，把 4 位數房間密碼告訴其他玩家，大家輸入密碼加入。開戰後，畫面與操作用 web 直連（WebRTC P2P）在裝置之間傳送，戰鬥中不讀寫 Firestore；結束後由房主把整場資料與獎勵一次回傳 Firebase。</p>
+            <div class="tiles" style="grid-template-columns:repeat(2,1fr)">${T('#cb2d3e', '#ef473a', 'PK 對戰', '2 人面對面互射', '⚔', "game.setState('PK')")}${T('#00b09b', '#96c93d', '多人闖關', '2～3 人連線協力闖關', '盟', "game.setState('COOPNET')", '#022')}</div>
+            <button class="btn" style="margin-top:10px" onclick="game.setState('LOBBY')">返回大廳 [Esc]</button></div>`);
+    },
+    recordMatch(rec) {   // 房主把整場的戰績與獎勵「一次」回傳 Firebase（只寫一筆，戰鬥中不同步）
+        if (!this.user || !db) return;
+        const id = rec.mode + '_' + rec.code + '_' + rec.startAt;
+        db.collection('matches').doc(id).set(Object.assign({ host: this.user.uid, hostName: (this.profile && this.profile.name) || '', endAt: Date.now() }, rec)).catch(e => console.warn('戰績回傳失敗', e));
     },
     refresh() { const st = G.gameState; if (st === 'FRIENDS') this.renderFriends(); else if (st === 'PK') this.renderPK(); this.updateFriendDot(); this.renderInvites(); },
     updateFriendDot() { const d = $('fr-dot'); if (!d) return; const n = this.reqIn.length; d.textContent = n > 99 ? '99+' : n; d.style.display = n ? 'block' : 'none';
@@ -3117,7 +3136,7 @@ const online = window.online = {
         return T('#f7971e', '#ffd200', '排行榜', '線上排名', '★', "game.setState('RANK')", '', '#222')
             + T('#11998e', '#38ef7d', '好友', `聊天／邀請${this.reqIn.length ? '（' + this.reqIn.length + ' 筆邀請）' : ''}`, '友', "game.setState('FRIENDS')", '', '#022', dot)
             + T('#614385', '#516395', '圖鑑', '成語・戰鬥資料・音樂庫', '鑑', "game.setState('DB')")
-            + T('#cb2d3e', '#ef473a', '好友 PK', '與好友對決', '⚔', "game.setState('PK')")
+            + T('#cb2d3e', '#ef473a', '多人連線對戰', 'PK 對戰・多人闖關（web 直連）', '⚔', "game.setState('MULTI')")
             + T('#00b09b', '#96c93d', '同機多人闖關', '2～3 人同鍵盤・各自登入', '盟', "game.setState('COOP')", '', '#022')
             + T('#1d2b64', '#3a6073', '個人戰績', '分數・暗物質・常用戰機', '績', "game.setState('STATS')", 'w2')
             + T('#134e5e', '#71b280', '新手教學', '圖文說明', '?', "game.setState('TUTORIAL')", 'w2');
@@ -3172,14 +3191,15 @@ const online = window.online = {
     touch(force) {
         const now = Date.now();
         if (!this.user || !this.profile || !db || this.offline) return;
-        if (force || now - this.lastPres > 60000) {
-            this.lastPres = now;
-            db.collection('presence').doc(this.user.uid).set({ name: this.profile.name, top: this.topShip(this.profile), lastActive: now }).catch(() => {});
-        }
+        if (force || now - this.lastPres > 120000) { this.lastPres = now; this.presWrite(now); }
     },
     goOffline() {
         if (!this.user || !this.profile || !db) return; this.lastPres = 0;
-        db.collection('presence').doc(this.user.uid).set({ name: this.profile.name, top: this.topShip(this.profile), lastActive: Date.now() - this.ONL_MS }).catch(() => {});
+        this.presWrite(Date.now() - this.ONL_MS);
+    },
+    presWrite(t) {   // 全部玩家共用一份名單文件 presenceBoard/all（每人一個欄位）：寫一次只算 1 次寫入
+        if (!this.user || !this.profile || !db) return;
+        db.collection('presenceBoard').doc('all').set({ [this.user.uid]: { name: this.profile.name, top: this.topShip(this.profile), lastActive: t } }, { merge: true }).catch(() => {});
     },
     startPresence() {
         if (!this._actBound) {
@@ -3188,9 +3208,16 @@ const online = window.online = {
             window.addEventListener('pagehide', () => { try { if (['PLAYING', 'TRANSITION'].includes(G.gameState) && !G.pkMode && online.profile && online._finSeq !== G.runSeq) { G.leftRun = true; online.finishRun(false); } else if (online.settleStages().some(x => x.isNew)) { online.queuePush(); online.pushNow(); } } catch (e) {} online.goOffline(); });   // 戰鬥中直接關閉網頁也當作「結束出擊」，與陣亡、破關同樣結算
         }
         this.onl = {}; this.onlSet = null; this._presT0 = Date.now(); this.touch(true);
-        this.unsubs.push(db.collection('presence').where('lastActive', '>', Date.now() - 30 * 60000).onSnapshot(s => {
-            this.onl = {}; s.docs.forEach(d => { this.onl[d.id] = d.data(); this.nm[d.id] = d.data().name; }); this.evalOnline();
-        }, () => {}));
+        const poll = async () => {   // 讀一份文件＝1 次讀取；不再即時監聽（即時監聽會讓每個人的每次更新都變成「全員各讀一次」）
+            if (!this.user || !this.profile || document.visibilityState === 'hidden' || ['PLAYING', 'TRANSITION'].includes(G.gameState)) return;
+            try {
+                const s = await db.collection('presenceBoard').doc('all').get(), d = s.exists ? s.data() : {}, cut = Date.now() - 30 * 60000;
+                this.onl = {}; Object.keys(d).forEach(id => { const x = d[id]; if (x && x.lastActive > cut) { this.onl[id] = x; this.nm[id] = x.name; } });
+                this.onl[this.user.uid] = { name: this.profile.name, top: this.topShip(this.profile), lastActive: Date.now() };   // 自己一定在線（避免剛寫入還沒讀到）
+                this.evalOnline();
+            } catch (e) {}
+        };
+        poll(); clearInterval(this._presPoll); this._presPoll = setInterval(poll, 60000); this.unsubs.push(() => clearInterval(this._presPoll));
         clearInterval(this._onlTimer); this._onlTimer = setInterval(() => this.evalOnline(), 15000);
         this.unsubs.push(() => clearInterval(this._onlTimer));
     },
@@ -3540,7 +3567,7 @@ const online = window.online = {
             if (m) m.textContent = '刪除中…';
             const U = adb.collection('users').doc(T.uid);
             for (const sub of ['friends', 'invites']) { const s = await U.collection(sub).get(); await Promise.all(s.docs.map(d => d.ref.delete())); }
-            try { await adb.collection('presence').doc(T.uid).delete(); } catch (e) {}
+            try { await adb.collection('presence').doc(T.uid).delete(); } catch (e) {} try { await adb.collection('presenceBoard').doc('all').update({ [T.uid]: firebase.firestore.FieldValue.delete() }); } catch (e) {}
             await U.delete();
             this._adUsers = (this._adUsers || []).filter(u => u.uid !== T.uid); this._adT = null;
             const b = $('ad-user'); if (b) b.innerHTML = ''; const q = $('ad-q'); if (q) q.value = '';
@@ -3721,7 +3748,7 @@ const online = window.online = {
         const p = this.pk;
         if (!p) { ui(`<div class="menu-overlay" style="width:min(92vw,420px)"><h2 class="shop-title">PK 對戰</h2><p class="muted">主控端建立房間後，把 4 位數房間密碼給對方；對方輸入密碼即可加入。確認場地與戰機後開戰：雙方面對面互射，沒有 NPC 戰機；戰場中央會飄過兩倍數量的成語字塊，誰打爆字塊，字就飄向誰，集滿成語再發動招式攻擊對手。</p>
             <button class="btn btn-start" onclick="online.createRoom()">建立房間（主控端）</button>
-            <div style="margin:12px 0">輸入房間密碼加入（客戶端）<input class="inp" id="pk-code" maxlength="4" inputmode="numeric" placeholder="4 位數房間密碼"><button class="btn" onclick="online.joinRoom(document.getElementById('pk-code').value)">加入房間</button></div>${BACK}</div>`); return; }
+            <div style="margin:12px 0">輸入房間密碼加入（客戶端）<input class="inp" id="pk-code" maxlength="4" inputmode="numeric" placeholder="4 位數房間密碼"><button class="btn" onclick="online.joinRoom(document.getElementById('pk-code').value)">加入房間</button></div><button class="btn btn-start" style="margin-top:8px" onclick="game.setState('MULTI')">返回 [Esc]</button></div>`); return; }
         const r = p.room || {}, host = p.role === 'host', me = host ? 'host' : 'guest', both = r.guest && r.hostReady && r.guestReady;
         const shipName = id => { const S = SHIPS.find(x => x.id === id); return S ? S.name : '—'; };
         const owned = SHIPS.filter(S => G.fleet[S.id].own);
@@ -3813,7 +3840,6 @@ const online = window.online = {
         clearInterval(this._pkTimer); clearInterval(this._pkNet); const h = $('pk-hud'); if (h) h.remove();
         try { (p.rtcOff || []).forEach(f => f()); Object.values(p.rtcCh || {}).forEach(c => c.close()); if (p.pc) p.pc.close(); } catch (e) {} p.rtcOpen = false; clearInterval(this._pkNet); { const n = $('pk-net'); if (n) n.remove(); }
         if (p.rt) { try { p.myRef.remove(); if (p.role === 'host') p.base.remove(); } catch (e) {} this.rtClose(); }
-        if (p.started && !p.rt) this.roomRef(p.code).collection('pos').doc(p.role).delete().catch(() => {});
         if (p.role === 'host') this.roomRef(p.code).delete().catch(() => {}); else if (!p.over) this.roomRef(p.code).update({ guest: null, guestName: '', guestReady: false }).catch(() => {});
         G.pkMode = false; if (userAction && G.gameState === 'PK') this.renderPK();
     },
@@ -3829,7 +3855,7 @@ const online = window.online = {
         // 對手位置：用「主控端視角」的比例座標傳送；客戶端的畫面整個旋轉 180°，所以雙方都看到對方在上方、面對面
         let rt = null; try { rt = this.rtOpen(); } catch (e) { rt = null; }
         p.rt = rt;
-        if (rt) this.pkNetStart(p, me, opp, rt); else this.pkLegacyListen(p, me, opp);
+        if (rt) this.pkNetStart(p, me, opp, rt); else this.pkNetFail(p, '即時資料庫無法使用，無法建立對戰連線（請檢查 Realtime Database 是否已建立、規則是否允許讀寫）');
         this.pkNetLabel(p);
         clearInterval(this._pkTimer); this._pkTimer = setInterval(() => this.pkTick(), 160);
     },
@@ -3840,22 +3866,26 @@ const online = window.online = {
         const base = p.base = rt.ref('pk/' + p.code + '/' + p.matchId); p.myRef = base.child('p/' + me); p.rtcOff = [];
         try { p.myRef.onDisconnect().remove(); if (me === 'host') base.onDisconnect().remove(); } catch (e) {}   // 斷線或關頁時自動清掉
         const oref = base.child('p/' + opp), eref = base.child('ev');
-        const fail = e => { if (!p.rt) return; p.rt = null; toast('即時資料庫連不上，改用備援同步（請檢查 Realtime Database 設定與規則）', 5000); this.pkLegacyListen(p, me, opp); this.pkNetLabel(p); };
+        const fail = e => { if (!p.rt) return; p.rt = null; if (p.rtcOpen) { this.pkNetLabel(p); return; } this.pkNetFail(p, '即時資料庫連不上，無法對戰（請檢查 Realtime Database 是否已建立、規則是否允許讀寫）'); };
         const onv = s => { const d = s.val(); if (d) this.pkRecvPos(p, me, d); };
         const onc = s => this.pkRecvEv(p, s.val(), s.key);
         oref.on('value', onv, fail); eref.on('child_added', onc, fail);
         const cref = rt.ref('.info/connected'), onk = s => { p.rtConn = s.val() === true; }; cref.on('value', onk);
         setTimeout(() => { if (this.pk === p && p.rt && !p.rtConn) fail(); }, 6000);   // 6 秒內連不上（例如還沒建立資料庫）→ 改用備援
         p.unsubPos = () => { oref.off('value', onv); cref.off('value', onk); }; p.unsubEv = () => eref.off('child_added', onc);
-        try { this.pkRtcStart(p, me, opp, base); } catch (e) { console.warn('WebRTC 無法啟動', e); }   // 嘗試點對點直連；失敗就繼續用 Realtime Database 轉送
+        try { this.pkRtcStart(p, me, opp, base); } catch (e) { console.warn('WebRTC 無法啟動', e); }
+        if (!NET_RELAY) setTimeout(() => { if (this.pk === p && !p.over && !p.rtcOpen) this.pkNetFail(p, '無法建立 web 直連（P2P）。請換個網路，或到設定加入 TURN 中繼。'); }, 15000);   // 嘗試點對點直連；失敗就繼續用 Realtime Database 轉送
         clearInterval(this._pkNet); this._pkNet = setInterval(() => this.pkNet(), 50);
     },
     pkRecvPos(p, me, d) { p.gt = me === 'host' ? { x: d.x, y: d.y } : { x: 1 - d.x, y: 1 - d.y }; if (typeof d.hp === 'number') p.oh = d.hp; if (d.mx) p.om = d.mx; },
-    pkRecvEv(p, e, id) { if (!e || e.by === this.user.uid || p.seen.has(id)) return; p.seen.add(id); if (e.type === 'pop') { this.pkRemotePop(e.id); return; } p.castQ.push(e); this.pkNext(); },
+    pkRecvEv(p, e, id) { if (!e || e.by === this.user.uid || p.seen.has(id)) return; p.seen.add(id); if (e.type === 'pop') { this.pkRemotePop(e.id); return; }
+        if (e.type === 'end') { if (!p.over) this.endMatch(e.w); return; }   // 主控端裁決的結果
+        if (e.type === 'fin') { if (p.role === 'host') this.pkFinish(e.w); return; }   // 客戶端回報
+        p.castQ.push(e); this.pkNext(); },
     // ===== WebRTC 點對點直連：Realtime Database 只用來交換連線資訊（offer／answer／ICE），連上後資料直接在兩台裝置之間傳 =====
     pkRtcStart(p, me, opp, base) {
         if (!window.RTCPeerConnection) return;
-        const pc = p.pc = new RTCPeerConnection({ iceServers: [{ urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] }] });
+        const pc = p.pc = new RTCPeerConnection(NET_ICE);
         const sig = base.child('sig'), mine = sig.child('ice_' + me), theirs = sig.child('ice_' + opp), pend = [], offerRef = sig.child('offer'), ansRef = sig.child('answer'); let remoteSet = false;
         const addIce = c => { pc.addIceCandidate(c).catch(() => {}); }, flush = () => { remoteSet = true; pend.splice(0).forEach(addIce); };
         p.rtcCh = {};
@@ -3895,9 +3925,13 @@ const online = window.online = {
     pkEv(p, e) {   // 成語事件：有直連走直連，否則走 Realtime Database
         e = JSON.parse(JSON.stringify(e));
         if (p.rtcOpen && this.pkRtcSend(p, 'ev', { k: 'ev', id: this.user.uid + '_' + Date.now() + '_' + (p.evn = (p.evn || 0) + 1), e })) return;
-        if (p.rt) p.base.child('ev').push(e).catch(() => {});
+        if (p.rt && NET_RELAY) p.base.child('ev').push(e).catch(() => {});
     },
-    pkNetLabel(p) { const el = $('pk-net'); if (el && p) el.textContent = p.rtcOpen ? 'P2P 直連' + (p.rtt != null ? ' ' + p.rtt + 'ms' : '') : p.rt ? '連線：即時資料庫轉送' : '連線：Firestore 備援'; },
+    pkNetLabel(p) { const el = $('pk-net'); if (el && p) el.textContent = p.rtcOpen ? 'P2P 直連' + (p.rtt != null ? ' ' + p.rtt + 'ms' : '') : p.rt ? '連線：即時資料庫轉送' : '連線中…'; },
+    pkNetFail(p, msg) {   // 沒有任何可用的連線管道：中止本場（不改走 Firestore，避免耗盡讀寫額度）
+        if (!p || p.over) return; p.over = true; p.rt = null; G.pkMode = false; G.paused = true; clearInterval(this._pkTimer); clearInterval(this._pkNet);
+        G.dialog(`<h2 style="color:#ff6b6b">連線失敗</h2><p style="line-height:1.7">${esc(msg)}<br>本場不計勝負。</p><button class="btn btn-start" onclick="online.pkExit()">返回</button>`, () => this.pkExit());
+    },
     pkNet() {   // 每 0.05 秒檢查一次：直連時最多每 0.05 秒送一筆；走 Realtime Database 時最多每 0.1 秒送一筆（沒變化就不送，另有心跳）
         const p = this.pk; if (!p || !p.started || p.over || !(p.rt || p.rtcOpen)) return;
         const me = p.role, now = Date.now(), rtc = !!p.rtcOpen;
@@ -3908,17 +3942,9 @@ const online = window.online = {
         p.lx = X; p.ly = Y; p.lh = hp; p.lt = now;
         const msg = { x: +X.toFixed(4), y: +Y.toFixed(4), hp, mx: Math.round(G.maxHp), t: now };
         if (rtc && this.pkRtcSend(p, 'pos', msg)) return;
-        if (p.rt) { p.lr = now; p.myRef.set(msg).catch(() => {}); }
+        if (p.rt && NET_RELAY) { p.lr = now; p.myRef.set(msg).catch(() => {}); }
     },
-    pkLegacyListen(p, me, opp) {   // 備援：沒有 Realtime Database 時，沿用原本的 Firestore 同步
-        p.unsubPos = this.roomRef(p.code).collection('pos').doc(opp).onSnapshot(s => { const d = s.exists && s.data(); if (d) p.gt = me === 'host' ? { x: d.x, y: d.y } : { x: 1 - d.x, y: 1 - d.y }; }, () => {});
-        p.unsubEv = this.roomRef(p.code).collection('events').where('matchId', '==', p.matchId).onSnapshot(s => s.docChanges().forEach(ch => {
-            if (ch.type !== 'added') return; const e = ch.doc.data(); if (e.by === this.user.uid || p.seen.has(ch.doc.id)) return; p.seen.add(ch.doc.id);
-            if (e.type === 'pop') { this.pkRemotePop(e.id); return; }
-            p.castQ.push(e); this.pkNext();
-        }), () => {});
-    },
-    pkSend(idiom) { const p = this.pk; if (!p || !p.started) return; if (p.rt || p.rtcOpen) { this.pkEv(p, { type: 'cast', by: this.user.uid, name: this.profile.name, word: idiom.word, effect: idiom.effect, desc: idiom.desc, ts: Date.now() }); return; } this.roomRef(p.code).collection('events').add({ matchId: p.matchId, type: 'cast', by: this.user.uid, name: this.profile.name, word: idiom.word, effect: idiom.effect, desc: idiom.desc, ts: Date.now() }).catch(() => {}); },
+    pkSend(idiom) { const p = this.pk; if (!p || !p.started) return; if (p.rt || p.rtcOpen) { this.pkEv(p, { type: 'cast', by: this.user.uid, name: this.profile.name, word: idiom.word, effect: idiom.effect, desc: idiom.desc, ts: Date.now() }); return; } },
     pkNext() { const p = this.pk; if (p && p.castQ.length && !G.casting && G.gameState === 'PLAYING' && !p.over) { const e = p.castQ.shift(); G.startCast({ word: e.word, effect: e.effect, desc: e.desc }, e.name); } },
     pkApply(idiom) {   // 對手發動的攻擊在這裡結算（我是被攻擊方）
         const D = { BOMB_BOOST: 30, LASER_BEAM: 35, MISSILE: 25, PIERCE: 25 }[idiom.effect]; sfx.playIdiomFire(idiom.effect);
@@ -3931,9 +3957,6 @@ const online = window.online = {
     pkTick() {
         const p = this.pk; if (!p || !p.started || p.over) return;
         const me = p.role, opp = me === 'host' ? 'guest' : 'host', r = p.room || {}, hp = Math.max(0, Math.round(G.hp));
-        if (!p.rt && !p.rtcOpen && ((hp !== p.lastHp && Date.now() - p.lastPush > 450) || Date.now() - p.lastPush > 3000)) { p.lastHp = hp; p.lastPush = Date.now(); this.roomUpdate({ [me + 'Hp']: hp, [me + 'Max']: Math.round(G.maxHp) }); }
-        if (!p.rt && !p.rtcOpen) { const x = G.player.pos.x / WORLD.w, y = G.player.pos.y / WORLD.h;   // 我的位置（主控端視角的比例座標）
-          this.roomRef(p.code).collection('pos').doc(me).set({ x: me === 'host' ? x : 1 - x, y: me === 'host' ? y : 1 - y, ts: Date.now() }).catch(() => {}); }
         const left = Math.max(0, 180 - G.pkTime), O = this.pkOpp(p), oh = O.hp === undefined ? 100 : O.hp, om = O.mx || 100, h = $('pk-hud');
         if (h) h.innerHTML = `對手 ${esc(r[opp + 'Name'] || '')}　HP ${oh}　剩餘 ${Math.ceil(left)} 秒<div class="bar"><i style="width:${Math.min(100, oh / om * 100)}%"></i></div>`;
         if (left <= 0) { const oppHp = O.hp === undefined ? om : O.hp; const w = hp > oppHp ? this.user.uid : hp < oppHp ? (me === 'host' ? r.guest : r.host) : 'draw'; this.pkFinish(w); }
@@ -3981,7 +4004,7 @@ const online = window.online = {
         const def = b.pierce ? 0 : Math.max(0, (G.fleet[G.shipId].hp || 0) - (b.pen || 0)) * DEF_PER_LV;
         return Math.max(n * MIN_DMG_K, n - def);
     },
-    pkPop(id) { const p = this.pk; if (!p || !p.started) return; if (p.rt || p.rtcOpen) { this.pkEv(p, { type: 'pop', by: this.user.uid, id, ts: Date.now() }); return; } this.roomRef(p.code).collection('events').add({ matchId: p.matchId, type: 'pop', by: this.user.uid, id, ts: Date.now() }).catch(() => {}); },
+    pkPop(id) { const p = this.pk; if (!p || !p.started) return; if (p.rt || p.rtcOpen) { this.pkEv(p, { type: 'pop', by: this.user.uid, id, ts: Date.now() }); return; } },
     pkRemotePop(id) {   // 對手打爆字塊：字元飄向對手
         const i = G.idiomBlocks.findIndex(m => m.id === id); if (i < 0) return; const m = G.idiomBlocks[i];
         G.charItems.push({ pos: new Vec2(m.pos.x, m.pos.y), char: m.char, home: 'opp' }); G.idiomBlocks.splice(i, 1); G.burst(m.pos.x, m.pos.y, 6);
@@ -4000,11 +4023,20 @@ const online = window.online = {
         G.drawBars(ctx, g.x, g.y - 62 * S.s, 64, hp, mx, 0, mx, '#ff5566'); ctx.restore();
     },
     pkSelfDead() { const p = this.pk; if (!p || p.over) return; G.paused = true; const r = p.room || {}; this.pkFinish(p.role === 'host' ? r.guest : r.host); },
-    pkFinish(w) { const p = this.pk; if (!p || p.over || p.finishing) return; p.finishing = true; this.roomUpdate({ state: 'ended', winner: w || 'draw' }); setTimeout(() => { if (this.pk === p && !p.over) this.endMatch(w || 'draw'); }, 1500); },
+    pkFinish(w) {   // 勝負由主控端裁決：主控端先用 P2P 通知對手，再把結果回傳 Firebase；客戶端只回報
+        const p = this.pk; if (!p || p.over || p.finishing) return; p.finishing = true; w = w || 'draw';
+        if (p.role === 'host') { this.pkEv(p, { type: 'end', by: this.user.uid, w, ts: Date.now() }); this.roomUpdate({ state: 'ended', winner: w }); setTimeout(() => { if (this.pk === p && !p.over) this.endMatch(w); }, 800); }
+        else { this.pkEv(p, { type: 'fin', by: this.user.uid, w, ts: Date.now() }); setTimeout(() => { if (this.pk === p && !p.over) this.endMatch(w); }, 4000); }   // 等主控端裁決；4 秒沒收到就用自己算的
+    },
     endMatch(winner) {
         const p = this.pk; if (!p || p.over) return; p.over = true; G.pkMode = false; G.paused = true; clearInterval(this._pkTimer); clearInterval(this._pkNet);
         const win = winner === this.user.uid, draw = winner === 'draw' || !winner;
         if (!draw) this.stat(win ? 'pkWins' : 'pkLosses', 1);
+        if (p.role === 'host' && !p.recorded) {   // 房主：整場資料與獎勵一次回傳 Firebase
+            p.recorded = true; const r = p.room || {}, ids = [r.host, r.guest].filter(Boolean), names = {}, ships = {}, rewards = {};
+            ids.forEach(id => { names[id] = id === r.host ? (r.hostName || '') : (r.guestName || ''); ships[id] = id === r.host ? r.hostShip : r.guestShip; rewards[id] = draw ? {} : id === winner ? { pkWins: 1 } : { pkLosses: 1 }; });
+            this.recordMatch({ mode: 'pk', code: p.code, startAt: p.matchId, uids: ids, names, ships, winner: draw ? 'draw' : winner, stage: r.playStage || r.stage || 0, tier: pkTierOf(r), durSec: Math.round(G.pkTime || 0), rewards });
+        }
         sfx.playIdiomFire(win ? 'HEAL' : 'BOMB_BOOST');
         G.dialog(`<h2 style="color:${draw ? '#fff' : win ? 'var(--neon-gold)' : '#ff6b6b'}">${draw ? '平手' : win ? '勝利！' : '落敗'}</h2><p>PK 對戰結束</p><button class="btn btn-start" onclick="online.pkExit()">返回大廳</button>`, () => this.pkExit());
     },
@@ -4015,7 +4047,7 @@ function msgHtml(m, me) { if (m.sys) return `<div class="msg sys s${m.sys}">${es
 
 // ---------- 掛接到遊戲 ----------
 const wrap = (name, fn) => { const o = P[name]; P[name] = function (...a) { return fn.call(this, o, ...a); }; };
-const NEW = new Set(['LOGIN', 'RANK', 'FRIENDS', 'PK', 'COOP', 'DB', 'DB2', 'TUTORIAL', 'ADMIN', 'STATS']);
+const NEW = new Set(['LOGIN', 'RANK', 'FRIENDS', 'PK', 'COOP', 'MULTI', 'COOPNET', 'DB', 'DB2', 'TUTORIAL', 'ADMIN', 'STATS']);
 wrap('setState', function (o, state) {
     if (this.pkMode && (state === 'GAMEOVER' || state === 'VICTORY')) { online.pkSelfDead(); return; }
     if (NEW.has(state) && !['LOGIN', 'TUTORIAL', 'DB', 'DB2', 'STATS', 'COOP'].includes(state) && !online.user && !(state === 'ADMIN' && online.adminDb)) { toast('這個功能需要網路並登入'); return; }
@@ -4063,7 +4095,7 @@ wrap('handleKey', function (o, e) {
     }
     if (NEW.has(st) && !this.dlgOpen) {
         if (st === 'TUTORIAL') { if (e.code === 'ArrowRight' || e.code === 'Enter') { online.tut >= online._tutLen - 1 ? online.tutDone() : online.renderTutorial(online.tut + 1); } else if (e.code === 'ArrowLeft') online.renderTutorial(online.tut - 1); else if (e.code === 'Escape') online.tutDone(); return; }
-        if (e.code === 'Escape' && st !== 'LOGIN') { if ((st === 'PK' && online.pk) || (st === 'COOP' && coop.room)) return; this.setState('LOBBY'); } return;
+        if (e.code === 'Escape' && st !== 'LOGIN') { if ((st === 'PK' && online.pk) || ((st === 'COOP' || st === 'COOPNET') && coop.room)) return; this.setState(st === 'PK' || st === 'COOPNET' ? 'MULTI' : 'LOBBY'); } return;
     }
     o.call(this, e);
 });
@@ -4131,9 +4163,9 @@ const coop = {
             if (d.state === 'playing' && !r.started) this.begin(d);
             else if (d.state === 'ended' && r.started && !this.ended && d.result) this.finish(d.result);
             else if (d.state === 'lobby' && r.started) r.started = false;   // 房主重新開房
-            if (G.gameState === 'COOP') this.renderRoom();
+            if (G.gameState === 'COOPNET') this.renderRoomNet();
         }, e => toast(errMsg(e)));
-        if (G.gameState !== 'COOP') G.setState('COOP'); else this.renderRoom();
+        if (G.gameState !== 'COOPNET') G.setState('COOPNET'); else this.renderRoomNet();
     },
     leaveRoom(userAction) {
         const r = this.room; if (!r) return; this.room = null; r.closing = true;
@@ -4141,7 +4173,7 @@ const coop = {
         this.cleanupMatch();
         const ref = online.roomRef(r.code);
         if (r.role === 'host') ref.delete().catch(() => {}); else ref.update({ ['members.' + this.me()]: null }).catch(() => {});
-        if (['COOP', 'PLAYING', 'TRANSITION'].includes(G.gameState)) G.setState('LOBBY');
+        if (['COOP', 'COOPNET', 'PLAYING', 'TRANSITION'].includes(G.gameState)) G.setState('LOBBY');
     },
     setShip(id) {
         if (!this.room || !G.fleet[id] || !G.fleet[id].own) return; G.shipId = id; G.applyUpgrades(); G.save();
@@ -4157,9 +4189,9 @@ const coop = {
     },
     renderRoom() {
         const r = this.room;
-        if (!r) { ui(`<div class="menu-overlay" style="width:min(92vw,440px)"><h2 class="shop-title">多人闖關</h2><p class="muted" style="line-height:1.6;text-align:left">2～3 人協力（禁止單人）。房主建立房間後，把 4 位數房間密碼告訴隊友，隊友輸入即可加入。<br>・難度比一般第 9 關更難（第 10～18 關），小怪與 Boss 血量、攻擊都是 5 倍<br>・成語列全隊共用，誰發動，效果就落在誰身上<br>・發動方式與單人模式相同：成語集滿後直接按快捷數字鍵 1、2、3…（或點成語列）即可發動<br>・倒下的隊友要等 Boss 被打倒、進入下一關才會以半血復活<br>・隊員之間以 web 直連（WebRTC P2P）傳送畫面與操作，連不上時自動改走雲端備援<br>・掉落的是「銀河幣」，結算時依貢獻（承受傷害 &gt; 輸出 &gt; 蒐集字卡）分紅，可在機庫突破戰機的等級上限</p>
+        if (!r) { ui(`<div class="menu-overlay" style="width:min(92vw,440px)"><h2 class="shop-title">多人闖關</h2><p class="muted" style="line-height:1.6;text-align:left">2～3 人協力（禁止單人）。房主建立房間後，把 4 位數房間密碼告訴隊友，隊友輸入即可加入。<br>・難度比一般第 9 關更難（第 10～18 關），小怪與 Boss 血量、攻擊都是 5 倍<br>・成語列全隊共用，誰發動，效果就落在誰身上<br>・發動方式與單人模式相同：成語集滿後直接按快捷數字鍵 1、2、3…（或點成語列）即可發動<br>・倒下的隊友要等 Boss 被打倒、進入下一關才會以半血復活<br>・隊員之間以 web 直連（WebRTC P2P）傳送畫面與操作，連不上時改走即時資料庫轉送（不使用 Firestore）<br>・掉落的是「銀河幣」，結算時依貢獻（承受傷害 &gt; 輸出 &gt; 蒐集字卡）分紅，可在機庫突破戰機的等級上限</p>
             <button class="btn btn-start" onclick="coop.create()">建立房間聯機（房主・web 直連）</button>
-            <div style="margin:12px 0">輸入房間密碼加入<input class="inp" id="cp-code" maxlength="4" inputmode="numeric" placeholder="4 位數房間密碼"><button class="btn" onclick="coop.join(document.getElementById('cp-code').value)">加入房間</button></div>${BACK}</div>`); return; }
+            <div style="margin:12px 0">輸入房間密碼加入<input class="inp" id="cp-code" maxlength="4" inputmode="numeric" placeholder="4 位數房間密碼"><button class="btn" onclick="coop.join(document.getElementById('cp-code').value)">加入房間</button></div><button class="btn btn-start" style="margin-top:8px" onclick="game.setState('MULTI')">返回 [Esc]</button></div>`); return; }
         const d = r.data || {}, host = r.role === 'host', me = this.me(), M = this.members(), mine = (d.members || {})[me] || {};
         const owned = SHIPS.filter(S => G.fleet[S.id].own), others = M.filter(m => m.id !== d.host), canStart = M.length >= 2 && M.every(m => m.ready) && d.state === 'lobby';
         ui(`<div class="menu-overlay" style="width:min(94vw,520px)"><h2 class="shop-title">多人闖關房間 <span style="color:var(--neon-gold);letter-spacing:.2em">${esc(r.code)}</span></h2>
@@ -4197,17 +4229,8 @@ const coop = {
             this.order.forEach(id => { const m = mem[id], P = { uid: id, name: m.name, host: id === me, alive: true, left: false, in: null, at: performance.now() }; if (!P.host) P.s = this.freshState(m.st); this.P[id] = P; });
             G.fillEmptySlots();
             G.bullets.get = function () { const o = ObjectPool.prototype.get.call(this); o.owner = coop.cur; return o; };   // 每顆子彈記下是誰發射的（傷害要算在誰頭上）
-            this.unsubIn = ref.collection('pos').onSnapshot(s => s.docChanges().forEach(ch => {
-                const id = ch.doc.id; if (id === 'world' || ch.type === 'removed') return; const p = this.P[id], x = ch.doc.data();
-                if (p && x && x.mid === this.mid) { p.in = { x: x.x, y: x.y }; p.at = performance.now(); }
-            }), () => {});
-            this.unsubEv = ref.collection('events').where('matchId', '==', this.mid).onSnapshot(s => s.docChanges().forEach(ch => {
-                if (ch.type !== 'added') return; const e = ch.doc.data();
-                if (e.type === 'use') this.doUse(e.by, e.slot); else if (e.type === 'left') this.leftP(e.by);
-            }), () => {});
             G.resetStage(); this.placeAll();
         } else {
-            this.unsubWorld = ref.collection('pos').doc('world').onSnapshot(s => { const x = s.exists && s.data(); if (x) this.onWorld(x); }, () => {});
             this.inTimer = setInterval(() => this.sendInput(), 160);
             G.resetStage();
         }
@@ -4402,7 +4425,7 @@ const coop = {
     },
     useSlot(i) {
         if (G.gameState !== 'PLAYING' || this.ended || performance.now() < (G._swallowUntil || 0)) return;
-        if (G.coopHost) this.doUse(this.me(), i); else if (!this.rtcToHost({ k: 'use', slot: i })) online.roomRef(this.room.code).collection('events').add({ matchId: this.mid, type: 'use', by: this.me(), slot: i, ts: Date.now() }).catch(() => {});
+        if (G.coopHost) this.doUse(this.me(), i); else if (!this.rtcToHost({ k: 'use', slot: i }) && NET_RELAY && this.rtc) this.rtc.base.child('ev').push({ type: 'use', by: this.me(), slot: i, ts: Date.now() }).catch(() => {});
     },
     tick(dt) {
         this.sendT += dt; if (this.sendT >= 0.125) { this.sendT = 0; this.sendWorld(); }
@@ -4439,19 +4462,19 @@ const coop = {
         S.ST = {}; ids.forEach(id => { const s = this.stats[id] || {}; S.ST[id] = [ri(s.dmg || 0), ri(s.tank || 0), ri(s.chr || 0)]; });
         if (g.shock && g.shock !== this._shk) { this._shk = g.shock; this.evq.push(['sh', ri(g.shock.x), ri(g.shock.y)]); }
         S.V = this.evq.splice(0, 40); this.evq.length = 0;
-        const str = JSON.stringify(S); if (this.rtcWorld(str)) return;   // 每位隊員都已 web 直連：不必再寫 Firestore
-        this._wr = (this._wr || 0) + 1;
-        online.roomRef(this.room.code).collection('pos').doc('world').set({ s: str, q: S.q, t: Date.now() }).catch(() => {}).then(() => { this._wr--; });
+        const str = JSON.stringify(S); if (this.rtcWorld(str)) return;   // 每位隊員都已 web 直連：完全不經過伺服器
+        const R = this.rtc; if (!NET_RELAY || !R) return;   // 沒直連的隊員：改走 Realtime Database 轉送（不是 Firestore）
+        this._wr = (this._wr || 0) + 1; R.base.child('world').set({ s: str, q: S.q }).catch(() => {}).then(() => { this._wr--; });
     },
 
     // ================= 客戶端：映射主控端的畫面 =================
     sendInput() {
-        if (!this.room || !this.room.started || this.ended || G.gameState === 'COOP') return;
+        if (!this.room || !this.room.started || this.ended || ['COOP', 'COOPNET'].includes(G.gameState)) return;
         const p = G.player.pos, moved = Math.hypot(p.x - this.inX, p.y - this.inY) > 2;
         if (!moved && Date.now() - this.inSent < 1500) return;
         this.inX = p.x; this.inY = p.y; this.inSent = Date.now();
         if (this.rtcToHost({ k: 'in', x: Math.round(p.x), y: Math.round(p.y) })) return;
-        online.roomRef(this.room.code).collection('pos').doc(this.me()).set({ x: Math.round(p.x), y: Math.round(p.y), mid: this.mid, t: Date.now() }).catch(() => {});
+        const R = this.rtc; if (NET_RELAY && R) R.base.child('in/' + this.me()).set({ x: Math.round(p.x), y: Math.round(p.y) }).catch(() => {});
     },
     onWorld(d) {
         let S; try { S = JSON.parse(d.s); } catch (e) { return; }
@@ -4568,8 +4591,13 @@ const coop = {
         if (this.ended) return; this.ended = true;
         const rows = this.calc(this.order.filter(id => !this.P[id].left)); rows.forEach(r => { r.tank = Math.round(r.tank); r.dmg = Math.round(r.dmg); r.chr = Math.round(r.chr); });
         const res = { win: !!win, st: G.currentStage, sb: G.currentSub, pool: Math.round(this.pool), rows, mid: this.mid };
-        if (this.room) online.roomRef(this.room.code).update({ state: 'ended', result: res }).catch(() => {});
-        this.finish(res);
+        if (this.room) {
+            this.rtcBroadcast({ k: 'end', res });   // 先用 P2P 直接通知隊員
+            online.roomRef(this.room.code).update({ state: 'ended', result: res }).catch(() => {});   // 備援：隊員沒收到 P2P 時，從房間文件拿結果
+            online.recordMatch({ mode: 'coop', code: this.room.code, startAt: this.mid, uids: this.order.slice(), names: Object.assign({}, this.nm), win: !!win, stage: G.currentStage, sub: G.currentSub, pool: res.pool,
+                rows: rows.map(r => ({ uid: r.uid, name: r.name, tank: r.tank, dmg: r.dmg, chr: r.chr, share: Math.round(r.share * 10000) / 10000, coins: r.coins })), rewards: Object.fromEntries(rows.map(r => [r.uid, { galaxy: r.coins }])) });   // 房主：整場資料與獎勵一次回傳 Firebase
+            setTimeout(() => this.finish(res), 300);
+        } else this.finish(res);
     },
     finish(res) {
         if (this.finished === res.mid) return; this.finished = res.mid; this.ended = true;
@@ -4593,13 +4621,13 @@ const coop = {
     again() {
         const r = this.room; this.cleanupMatch();
         if (r && r.role === 'host' && r.data) { const p = { state: 'lobby', result: firebase.firestore.FieldValue.delete() }; Object.keys(r.data.members || {}).forEach(id => { if (r.data.members[id] && id !== r.data.host) p['members.' + id + '.ready'] = false; }); online.roomRef(r.code).update(p).catch(() => {}); }
-        G.setState('COOP');
+        G.setState('COOPNET');
     },
     toLobby() { this.cleanupMatch(); this.leaveRoom(true); G.setState('LOBBY'); },
     leaveMatch() {   // 戰鬥中按「回首頁」
         if (G.coopHost) { this.end(false); return; }
-        online.roomRef(this.room.code).collection('events').add({ matchId: this.mid, type: 'left', by: this.me(), ts: Date.now() }).catch(() => {});
-        this.cleanupMatch(); this.leaveRoom(true); G.setState('LOBBY');
+        if (!this.rtcToHost({ k: 'left' }) && NET_RELAY && this.rtc) this.rtc.base.child('ev').push({ type: 'left', by: this.me(), ts: Date.now() }).catch(() => {});
+        setTimeout(() => { this.cleanupMatch(); this.leaveRoom(true); G.setState('LOBBY'); }, 250);   // 等「離開」訊息送出
     },
     pauseMatch() {
         [this.unsubIn, this.unsubEv, this.unsubWorld].forEach(f => { try { f && f(); } catch (e) {} }); this.unsubIn = this.unsubEv = this.unsubWorld = null; clearInterval(this.inTimer); this.inTimer = null;
@@ -4624,17 +4652,38 @@ Object.assign(coop, {
     },
     // ---- web 直連：Realtime Database 只交換連線資訊，連上後畫面與操作直接在裝置之間傳（星狀：房主 ↔ 每位隊員）----
     rtcStart(d) {
-        this.rtcStop(); if (this.local || !this.room || !window.RTCPeerConnection) return;
-        let rt; try { rt = online.rtOpen(); } catch (e) { return; }
+        this.rtcStop(); if (this.local || !this.room) return;
+        let rt; try { rt = online.rtOpen(); } catch (e) { return this.netFail('即時資料庫無法使用，無法建立連線（請檢查 Realtime Database 是否已建立、規則是否允許讀寫）'); }
         const r = this.room, me = this.me(), host = r.role === 'host';
         this.rtc = { rt, host, peers: {}, off: [], base: rt.ref('pk/' + r.code + '/' + this.mid + 'c') };
         $('game-container').insertAdjacentHTML('beforeend', '<div id="coop-net" style="position:fixed;left:6px;bottom:6px;font:11px sans-serif;color:#9ab;z-index:5;pointer-events:none"></div>');
-        if (host) this.order.filter(id => id !== me).forEach(id => this.rtcPeer(id, true)); else this.rtcPeer(me, false);
+        this.relayStart(host);
+        if (window.RTCPeerConnection) { if (host) this.order.filter(id => id !== me).forEach(id => this.rtcPeer(id, true)); else this.rtcPeer(me, false); }
+        if (!NET_RELAY) setTimeout(() => { const R = this.rtc; if (R && !this.ended && !Object.values(R.peers).every(P => P.open)) this.netFail('無法建立 web 直連（P2P）。請換個網路，或到設定加入 TURN 中繼。'); }, 15000);
         this.rtcLabel();
     },
+    relayStart(host) {   // 備援管道：P2P 連不上的隊員，改走 Realtime Database 轉送（Firestore 戰鬥中完全不用）
+        const R = this.rtc; if (!R) return;
+        if (host) {
+            try { R.base.onDisconnect().remove(); } catch (e) {}
+            const inRef = R.base.child('in'), evRef = R.base.child('ev');
+            const onIn = x => { const P = this.P && this.P[x.key], v = x.val(); if (P && v && !P.left) { P.in = { x: +v.x || 0, y: +v.y || 0 }; P.at = performance.now(); } };
+            const onEv = x => { const e = x.val(); if (!e || e.by === this.me() || this.ended) return; if (e.type === 'use') this.doUse(e.by, e.slot | 0); else if (e.type === 'left') this.leftP(e.by); };
+            inRef.on('child_added', onIn); inRef.on('child_changed', onIn); evRef.on('child_added', onEv);
+            R.off.push(() => { inRef.off('child_added', onIn); inRef.off('child_changed', onIn); evRef.off('child_added', onEv); });
+        } else {
+            const wRef = R.base.child('world'), onW = x => { const v = x.val(); if (v) this.onWorld(v); };
+            wRef.on('value', onW); R.off.push(() => wRef.off('value', onW));
+        }
+    },
+    netFail(msg) {   // 沒有任何可用的連線管道：中止本場（不改走 Firestore）
+        if (this.ended) return; this.ended = true; toast(msg, 7000);
+        setTimeout(() => { this.cleanupMatch(); this.leaveRoom(true); G.setState('LOBBY'); }, 50);
+    },
+    rtcBroadcast(obj) { const R = this.rtc; if (!R || !R.host) return; const m = JSON.stringify(obj); Object.values(R.peers).forEach(pe => { try { if (pe.ch.e && pe.ch.e.readyState === 'open') pe.ch.e.send(m); } catch (e) {} }); },
     rtcPeer(gid, isHost) {
         const R = this.rtc, sig = R.base.child('sig'), offerRef = sig.child('offer_' + gid), ansRef = sig.child('answer_' + gid), mine = sig.child((isHost ? 'ice_h_' : 'ice_g_') + gid), theirs = sig.child((isHost ? 'ice_g_' : 'ice_h_') + gid);
-        const pc = new RTCPeerConnection({ iceServers: [{ urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] }] }), P = R.peers[gid] = { pc, ch: {}, open: false };
+        const pc = new RTCPeerConnection(NET_ICE), P = R.peers[gid] = { pc, ch: {}, open: false };
         const pend = []; let remote = false; const add = c => { pc.addIceCandidate(c).catch(() => {}); }, flush = () => { remote = true; pend.splice(0).forEach(add); };
         const setup = ch => { P.ch[ch.label] = ch; ch.onopen = ch.onclose = () => this.rtcCheck(gid); ch.onmessage = ev => { try { this.rtcMsg(gid, JSON.parse(ev.data)); } catch (e) {} }; };
         pc.onicecandidate = e => { if (e.candidate) mine.push(e.candidate.toJSON ? e.candidate.toJSON() : e.candidate).catch(() => {}); };
@@ -4654,13 +4703,14 @@ Object.assign(coop, {
     rtcCheck(gid, dead) { const R = this.rtc, P = R && R.peers[gid]; if (!P) return; const w = P.ch.w, e = P.ch.e; P.open = !dead && !!w && !!e && w.readyState === 'open' && e.readyState === 'open'; this.rtcLabel(); },
     rtcLabel() {
         const el = $('coop-net'), R = this.rtc; if (!el || !R) return; const ids = Object.keys(R.peers), n = ids.filter(id => R.peers[id].open).length;
-        el.textContent = n && n === ids.length ? 'web 直連（P2P）' : n ? `web 直連 ${n}/${ids.length}（其餘走雲端備援）` : '連線：雲端備援';
+        el.textContent = n && n === ids.length ? 'web 直連（P2P）' : n ? `web 直連 ${n}/${ids.length}（其餘走即時資料庫轉送）` : '連線：即時資料庫轉送';
     },
     rtcMsg(gid, d) {
         if (this.rtc && this.rtc.host) {   // 房主收到：隊員的位置與成語操作
             const P = this.P && this.P[gid]; if (!P || P.left || this.ended) return;
-            if (d.k === 'in') { P.in = { x: +d.x || 0, y: +d.y || 0 }; P.at = performance.now(); } else if (d.k === 'use') this.doUse(gid, d.slot | 0);
+            if (d.k === 'in') { P.in = { x: +d.x || 0, y: +d.y || 0 }; P.at = performance.now(); } else if (d.k === 'use') this.doUse(gid, d.slot | 0); else if (d.k === 'left') this.leftP(gid);
         } else if (d.k === 'w') this.onWorld({ s: d.s });   // 隊員收到：房主的畫面
+        else if (d.k === 'end' && d.res) this.finish(d.res);   // 隊員收到：房主裁決的結果
     },
     rtcWorld(str) {   // 房主：把畫面送給已直連的隊員；全部隊員都直連時回傳 true（可略過 Firestore）
         const R = this.rtc; if (!R || !R.host) return false; const msg = JSON.stringify({ k: 'w', s: str }); let all = true, any = false;
@@ -4670,7 +4720,7 @@ Object.assign(coop, {
     },
     rtcToHost(obj) {   // 隊員：送給房主；直連可用時回傳 true
         const R = this.rtc, pe = R && !R.host && R.peers[this.me()]; if (!pe || !pe.open) return false;
-        const ch = obj.k === 'use' ? pe.ch.e : pe.ch.w; if (!ch || ch.readyState !== 'open') return false;
+        const ch = obj.k === 'use' || obj.k === 'left' ? pe.ch.e : pe.ch.w; if (!ch || ch.readyState !== 'open') return false;
         try { ch.send(JSON.stringify(obj)); return true; } catch (e) { return false; }
     },
     rtcStop() {
@@ -4850,7 +4900,8 @@ const lcoop = window.lcoop = {
     again() { if (this.pending() && !confirm('還有帳號沒有上傳成功（或上傳中），現在離開結算會遺失那場的銀河幣。確定繼續？')) return; coop.cleanupMatch(); G.setState('COOP'); },
     toLobby() { if (this.pending() && !confirm('還有帳號沒有上傳成功（或上傳中），現在離開會遺失那場的銀河幣。確定離開？')) return; coop.cleanupMatch(); this.dispose(); G.setState('LOBBY'); }
 };
-coop.renderRoom = function () { lcoop.render(); };
+coop.renderRoomNet = coop.renderRoom;   // 線上房間畫面（多人連線對戰 → 多人闖關）
+coop.renderRoom = function () { lcoop.render(); };   // 同機多人闖關
 Object.assign(coop, {
     selNext(id) { const n = Math.max(1, G.maxSlots); this.sel[id] = ((this.sel[id] || 0) + 1) % n; lcoop.paintSel(); },
     useSel(id) { const i = this.sel[id] || 0, s = G.slots[i]; if (s && s.type === 'READY') this.doUse(id, i); },
@@ -4947,7 +4998,7 @@ wrap('renderLobby', function (o) {
     document.querySelectorAll('.tiles .tile').forEach(el => {
         const h = el.querySelector('h4'); if (!h) return; const n = h.textContent.trim();
         if (n.indexOf('軍械商店') === 0) { const s = el.querySelectorAll('small'); if (s[1]) s[1].textContent = '單機模式停用'; el.style.opacity = '.45'; }
-        else if (['排行榜', '好友', '好友 PK', '個人戰績'].includes(n)) { const s = el.querySelectorAll('small'); if (s[0]) s[0].textContent = '需要登入'; el.style.opacity = '.45'; }
+        else if (['排行榜', '好友', '多人連線對戰', '個人戰績'].includes(n)) { const s = el.querySelectorAll('small'); if (s[0]) s[0].textContent = '需要登入'; el.style.opacity = '.45'; }
     });
     const t = document.querySelector('.tiles'); if (t) t.insertAdjacentHTML('beforeend', '<div class="tile w2" style="--a:#3a3f5c;--b:#555b7e" onclick="online.exitFree()"><h4>返回登入畫面</h4><small>離開單機離線模式</small><span class="ico">↩</span></div>');
 });
@@ -4975,7 +5026,7 @@ window.addEventListener('online', () => { setTimeout(() => G.quietCheck(), 1500)
 // ---------- 啟動 ----------
 online.authReady = new Promise(res => {
     if (!fbOk) return res();
-    auth.onAuthStateChanged(async u => { try { if (u) await online.onLogin(u); else online.onLogout(); } catch (e) { console.error(e); const em = errMsg(e) + (e && e.code ? '（' + e.code + '）' : ''); toast(em, 6000); const lm = document.getElementById('lg-msg'); if (lm) lm.textContent = em; const lb = document.getElementById('lg-go'); if (lb) lb.disabled = false; if (u) { online.user = null; online.profile = null; try { auth.signOut(); } catch (e2) {} } } finally { res(); } });
+    auth.onAuthStateChanged(async u => { try { if (u) await online.onLogin(u); else online.onLogout(); } catch (e) { console.error(e); const em = '[' + (online._stage || '登入') + '] ' + errMsg(e) + (e && e.code ? '（' + e.code + '）' : ''); toast(em, 6000); const lm = document.getElementById('lg-msg'); if (lm) lm.textContent = em; const lb = document.getElementById('lg-go'); if (lb) lb.disabled = false; if (u) { online.user = null; online.profile = null; try { auth.signOut(); } catch (e2) {} } } finally { res(); } });
 });
 })();
 

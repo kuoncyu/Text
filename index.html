@@ -383,7 +383,7 @@ document.addEventListener('keydown', e => { const t = e.target; if (t && (t.tagN
 // ===== 等比例縮放：遊戲以「虛擬世界」(寬 ≥ 540、高 900 為基準) 運作，畫布再等比例放大到實際螢幕 =====
 // ★ 版本號格式：日期＋英文字母，如 20261116a 是當天第一版、20261116b 是第二版（較新）。
 // ★ 不要手動修改！請在專案資料夾執行  node release.js  ，它會自動產生新版本號、同步 sw.js、並更新 version.json（檔案清單與雜湊值）。
-const APP_VERSION = '20261116d', APP_AUTHOR = '郭柏宏';
+const APP_VERSION = '20261116e', APP_AUTHOR = '郭柏宏';
 const VER_RE = /^\d{8}[a-z]$/;
 const verNewer = (a, b) => VER_RE.test(a) && (!VER_RE.test(b) || a > b);   // a 是否比 b 新（日期大者較新；同一天字母大者較新）
 // ===== 暗物質花費曲線：越高等越貴 =====
@@ -2837,7 +2837,7 @@ const errMsg = e => ({ 'auth/user-not-found': '帳號或密碼錯誤', 'auth/wro
     'auth/operation-not-allowed': '尚未在 Firebase 後台開啟「電子郵件／密碼」登入', 'auth/too-many-requests': '嘗試次數過多，請稍後再試',
     'auth/invalid-email': '帳號格式不被接受（請用英文、數字或底線）', 'auth/admin-restricted-operation': 'Firebase 後台已關閉「使用者自行註冊」，請到 Authentication → 設定 → 使用者動作 開啟', 'auth/unauthorized-domain': '這個網址沒有加入 Firebase 的「授權網域」', 'auth/configuration-not-found': 'Firebase 尚未啟用 Authentication（請到後台按「開始使用」）',
     'auth/api-key-not-valid.-please-pass-a-valid-api-key.': 'Firebase API 金鑰無效', 'auth/internal-error': 'Firebase 內部錯誤，請稍後再試', 'auth/quota-exceeded': 'Firebase 今日額度已用完', 'unavailable': '無法連線到資料庫（Firestore），請確認網路', 'failed-precondition': '資料庫尚未建立（請到 Firebase 後台建立 Firestore）',
-    'permission-denied': '沒有權限（請確認 Firestore 規則已發布，且允許新使用者建立自己的資料）' }[e && e.code]
+    'permission-denied': '沒有權限（請確認最新的 Firestore 規則 firestore.rules 已發布；管理員功能需用管理員帳號 admin 登入）' }[e && e.code]
     || ((e && e.message === 'timeout') ? '連線逾時，請確認網路後再試一次' : (e && /^auth\/(requests-from-referer|requests-from-ip)/.test(e.code || '')) ? '這個網址被 Firebase API 金鑰的限制擋下（請到 Google Cloud 的金鑰設定加入這個網域）' : ('發生錯誤：' + ((e && (e.code || e.message)) || e))));
 
 // ---------- 樣式 ----------
@@ -2987,7 +2987,7 @@ const online = window.online = {
           if (m && m.uid === u.uid && m.dirty && m.save && (m.updatedAt || 0) > (this.profile.updatedAt || 0)) {
             Object.assign(this.profile, m.profile); localStorage.setItem(SAVEKEY, JSON.stringify(m.save)); G.resetProgress(); G.load(); G.applyUpgrades(); this.queuePush(); toast('已同步離線期間的進度');
           } }
-        try { this.isAdmin = (await db.collection('admins').doc(u.uid).get()).exists; } catch (e) { this.isAdmin = false; }
+        this.isAdmin = (u.email || '').toLowerCase() === ADMIN_USER + MAIL; if (!this.isAdmin) { try { this.isAdmin = (await db.collection('admins').doc(u.uid).get()).exists; } catch (e) { this.isAdmin = false; } }
         this.startListeners(); this.mountChat();
         if (G.gameState === 'LOGIN') G.setState(this.profile.tutorialDone ? 'LOBBY' : 'TUTORIAL');
     },

@@ -2,7 +2,9 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     function signedIn() { return request.auth != null; }
-    function isAdmin() { return signedIn() && exists(/databases/$(database)/documents/admins/$(request.auth.uid)); }
+    // 管理員：用「管理員帳號的 Email」判斷（在遊戲「關於」頁輸入管理員密碼登入的就是這個帳號）；
+    // 也相容舊做法：admins 集合裡有該 UID 的文件也算管理員。
+    function isAdmin() { return signedIn() && (request.auth.token.email == 'admin@idiom-fighter.app' || exists(/databases/$(database)/documents/admins/$(request.auth.uid))); }
 
     // 黑名單：只有管理員可以新增／移除；玩家只能讀自己的那一筆（登入時用來判斷是否被停權）
     match /banned/{uid} {

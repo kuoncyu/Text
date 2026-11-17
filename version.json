@@ -1,5 +1,5 @@
 {
- "version": "20261116e",
+ "version": "20261116f",
  "built": "2026-11-16T12:00:00.000Z",
  "files": {
   "assets/bg/stage1.jpg": [
@@ -199,8 +199,8 @@
    95281
   ],
   "index.html": [
-   "d752200ee7beb13c",
-   491675
+   "5d38f72e5f58bafe",
+   493852
   ],
   "manifest.webmanifest": [
    "280969abd1bb736a",

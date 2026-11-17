@@ -383,7 +383,7 @@ document.addEventListener('keydown', e => { const t = e.target; if (t && (t.tagN
 // ===== 等比例縮放：遊戲以「虛擬世界」(寬 ≥ 540、高 900 為基準) 運作，畫布再等比例放大到實際螢幕 =====
 // ★ 版本號格式：日期＋英文字母，如 20261116a 是當天第一版、20261116b 是第二版（較新）。
 // ★ 不要手動修改！請在專案資料夾執行  node release.js  ，它會自動產生新版本號、同步 sw.js、並更新 version.json（檔案清單與雜湊值）。
-const APP_VERSION = '20261116e', APP_AUTHOR = '郭柏宏';
+const APP_VERSION = '20261116f', APP_AUTHOR = '郭柏宏';
 const VER_RE = /^\d{8}[a-z]$/;
 const verNewer = (a, b) => VER_RE.test(a) && (!VER_RE.test(b) || a > b);   // a 是否比 b 新（日期大者較新；同一天字母大者較新）
 // ===== 暗物質花費曲線：越高等越貴 =====
@@ -1402,26 +1402,42 @@ class Game {
             const bytes = todo.reduce((s, u) => s + (want[u][1] || 0), 0);
             say(todo.length ? `${old.v ? `${old.v} → ${APP_VERSION}：` : ''}${todo.length} 個檔案需要下載（約 ${(bytes / 1048576).toFixed(1)} MB）…` : '所有檔案都已是最新版本');
             let done = 0;
-            const get = async url => {
-                try {
-                    const cross = new URL(url, location.href).origin !== location.origin;
-                    const r = await fetch(url, cross ? { mode: 'no-cors' } : { cache: 'reload' });
-                    if (r.ok || r.type === 'opaque') {
-                        // 有些主機對不存在的檔案也回 200＋網頁：這種不是真的圖片／音樂，不能存進資料包
-                        if (r.type !== 'opaque' && /text\/html/i.test(r.headers.get('content-type') || '') && !/^(index\.html|\.\/)$/.test(url)) miss.add(url);
-                        else { await cache.put(url, r); files[url] = want[url][0]; }
-                    }
-                    else if (r.status === 404) miss.add(url); else fail.add(url);
-                } catch (e) { fail.add(url); }
+            const why = {}, isMedia = u => /\.(mp3|ogg|wav|m4a)$/i.test(u);
+            const get = async url => {   // 失敗自動重試 3 次；整份讀完再存（避免 206 部分內容、串流中斷）；大檔案給比較長的等待時間
+                const big = isMedia(url);
+                for (let a = 1; a <= 3; a++) {
+                    const ac = new AbortController(), tm = setTimeout(() => ac.abort(), big ? 180000 : 60000);
+                    try {
+                        const cross = new URL(url, location.href).origin !== location.origin;
+                        const r = await fetch(url, cross ? { mode: 'no-cors', signal: ac.signal } : { cache: 'reload', signal: ac.signal });
+                        if (r.ok || r.type === 'opaque') {
+                            // 有些主機對不存在的檔案也回 200＋網頁：這種不是真的圖片／音樂，不能存進資料包
+                            if (r.type !== 'opaque' && /text\/html/i.test(r.headers.get('content-type') || '') && !/^(index\.html|\.\/)$/.test(url)) { miss.add(url); break; }
+                            if (r.type === 'opaque') await cache.put(url, r);
+                            else {
+                                const blob = await r.blob();
+                                if (big && want[url][1] && blob.size !== want[url][1]) throw new Error(`檔案大小不符（收到 ${blob.size}，應為 ${want[url][1]}）`);
+                                await cache.put(url, new Response(blob, { status: 200, headers: { 'Content-Type': r.headers.get('Content-Type') || (big ? 'audio/mpeg' : 'application/octet-stream') } }));
+                            }
+                            files[url] = want[url][0]; fail.delete(url); delete why[url]; break;
+                        } else if (r.status === 404) { miss.add(url); break; }
+                        else why[url] = 'HTTP ' + r.status;
+                    } catch (e) { why[url] = (e && e.name === 'AbortError') ? '等待逾時' : String((e && e.message) || e); }
+                    finally { clearTimeout(tm); }
+                    if (a < 3) await new Promise(r => setTimeout(r, 800 * a)); else fail.add(url);
+                }
                 done++; const f = document.getElementById('off-fill'); if (f) f.style.width = (done / Math.max(1, todo.length) * 100) + '%';
                 if (todo.length) say(`更新中… ${done}/${todo.length}`);
             };
-            for (let i = 0; i < todo.length; i += 4) await Promise.all(todo.slice(i, i + 4).map(get));
+            const small = todo.filter(u => !isMedia(u)), large = todo.filter(isMedia);
+            for (let i = 0; i < small.length; i += 4) await Promise.all(small.slice(i, i + 4).map(get));   // 圖片等小檔案：4 個一組
+            for (let i = 0; i < large.length; i += 2) await Promise.all(large.slice(i, i + 2).map(get));   // 音樂等大檔案：2 個一組，避免同時搶頻寬而逾時
             const keep = new Set(urls.map(abs));
             if (!man.fallback) for (const r of await cache.keys()) if (!keep.has(r.url)) await cache.delete(r);          // 新版已經不存在的檔案 → 從快取移除（沒有 version.json 時不清理，避免誤刪）
             for (const u of miss) if (!prevMiss.has(u)) await cache.delete(abs(u));                      // 伺服器上已刪除的檔案 → 不留舊的
-            const okN = Object.keys(files).length, expected = urls.filter(u => !miss.has(u)).length, pass = okN / Math.max(1, expected) >= 0.9;
-            this._offResult = { ok: okN, total: Math.max(1, expected) };
+            const okN = Object.keys(files).length, expected = urls.filter(u => !miss.has(u)).length;
+            const must = urls.filter(u => !miss.has(u) && !isMedia(u)), mustOk = must.filter(u => files[u]).length, pass = mustOk / Math.max(1, must.length) >= 0.9;   // 音樂是選用：沒下載到也能進遊戲，之後會在背景補
+            const bad = [...fail][0]; this._offResult = { ok: okN, total: Math.max(1, expected), pass, sample: bad ? `${bad}：${why[bad] || '失敗'}` : '', musicFail: [...fail].filter(isMedia).length };
             // 下載到的檔案雜湊一律記下來（即使這次沒下載完，下次也只會補剩下的）；版本號要等到下載完整才更新
             localStorage.setItem('idiomOfflineInfo', JSON.stringify({ v: pass ? APP_VERSION : (old.v || null), n: okN, files, miss: [...miss], fail: [...fail], ts: Date.now() }));
             if (pass) for (const k of await caches.keys()) if (k.startsWith('idiom-offline-')) await caches.delete(k);   // 清掉舊制（每版一個）的離線資料包
@@ -1451,8 +1467,8 @@ class Game {
             if (navigator.serviceWorker) { try { const r = await navigator.serviceWorker.register('sw.js'); r.update && r.update(); } catch (e) {} }
             await this.downloadOffline();
             const r = this._offResult || { ok: 0, total: 1 };
-            if (r.ok / r.total >= 0.9) { setTimeout(done, 600); return; }
-            const i = document.getElementById('off-info'); if (i) i.textContent = r.err ? `下載失敗：${r.err}` : `下載不完整（${r.ok}/${r.total}），請確認網路後重試`;
+            if (r.pass !== undefined ? r.pass : r.ok / r.total >= 0.9) { if (r.musicFail) toast(`有 ${r.musicFail} 首音樂還沒下載完成，之後會在背景自動補下載`, 4500); setTimeout(done, 600); return; }
+            const i = document.getElementById('off-info'); if (i) i.textContent = r.err ? `下載失敗：${r.err}` : `下載不完整（${r.ok}/${r.total}）${r.sample ? '：' + r.sample : ''}，請確認網路後重試`;
             const b2 = document.getElementById('off-go'); if (b2) { b2.style.display = 'block'; b2.disabled = false; b2.onclick = run; }
             const sk = document.getElementById('off-skip'); if (sk && !navigator.onLine) { sk.style.display = 'block'; sk.onclick = done; }   // 強制更新：只有斷網時才能略過
         };

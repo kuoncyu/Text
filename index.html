@@ -383,7 +383,7 @@ document.addEventListener('keydown', e => { const t = e.target; if (t && (t.tagN
 // ===== 等比例縮放：遊戲以「虛擬世界」(寬 ≥ 540、高 900 為基準) 運作，畫布再等比例放大到實際螢幕 =====
 // ★ 版本號格式：日期＋英文字母，如 20261116a 是當天第一版、20261116b 是第二版（較新）。
 // ★ 不要手動修改！請在專案資料夾執行  node release.js  ，它會自動產生新版本號、同步 sw.js、並更新 version.json（檔案清單與雜湊值）。
-const APP_VERSION = '20261116f', APP_AUTHOR = '郭柏宏';
+const APP_VERSION = '20261116k', APP_AUTHOR = '郭柏宏';
 const VER_RE = /^\d{8}[a-z]$/;
 const verNewer = (a, b) => VER_RE.test(a) && (!VER_RE.test(b) || a > b);   // a 是否比 b 新（日期大者較新；同一天字母大者較新）
 // ===== 暗物質花費曲線：越高等越貴 =====
@@ -2983,6 +2983,7 @@ const online = window.online = {
     },
     async onLogin(u) {
         if (this.free) { try { auth.signOut(); } catch (e) {} return; }   // 單機離線模式中：忽略（晚到的）自動登入，免得蓋掉單機的固定配置
+        try { const ds = await Promise.race([db.collection('deleted').doc(u.uid).get(), new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 8000))]); if (ds.exists) { this.user = u; await this.removeDeleted(u); return; } } catch (e) {}   // 被管理員刪除的帳號：連登入帳號一起刪掉
         try { const bs = await Promise.race([db.collection('banned').doc(u.uid).get(), new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 8000))]); if (bs.exists) { this.user = u; await this.kick(bs.data()); return; } else { const k = JSON.parse(localStorage.getItem('idiomBanned') || 'null'); if (k && k.uid === u.uid) localStorage.removeItem('idiomBanned'); } } catch (e) {}
         this.offline = false; this.user = u; const username = (u.email || '').split('@')[0], ref = db.collection('users').doc(u.uid);
         let snap;
@@ -3006,6 +3007,13 @@ const online = window.online = {
         this.isAdmin = (u.email || '').toLowerCase() === ADMIN_USER + MAIL; if (!this.isAdmin) { try { this.isAdmin = (await db.collection('admins').doc(u.uid).get()).exists; } catch (e) { this.isAdmin = false; } }
         this.startListeners(); this.mountChat();
         if (G.gameState === 'LOGIN') G.setState(this.profile.tutorialDone ? 'LOBBY' : 'TUTORIAL');
+    },
+    async removeDeleted(u) {   // 管理員已刪除這個帳號：把 Firebase 的登入帳號本身也刪除（瀏覽器只能刪「自己」，所以在對方下次登入時執行），名稱就能重新註冊
+        let done = true; try { await u.delete(); } catch (e) { done = false; console.error(e); }
+        try { if (fbOk) await auth.signOut(); } catch (e) {}
+        try { localStorage.removeItem(SAVEKEY); localStorage.removeItem(MIRROR); } catch (e) {}
+        this.onLogout();
+        setTimeout(() => G.dialog(`<h3 style="color:var(--neon-red)">此帳號已被管理員刪除</h3><p style="text-align:left;line-height:1.7">${done ? '帳號與資料都已刪除，這個帳號名稱可以重新註冊。' : '帳號資料已刪除；請再輸入一次帳號密碼登入，即可完成刪除登入帳號。'}</p><button class="btn btn-start" onclick="game.closeDlg()">我知道了</button>`), 400);
     },
     async kick(b) {   // 黑名單：登出並顯示停權原因
         const reason = (b && b.reason) || '（管理員未填寫原因）';
@@ -3561,20 +3569,26 @@ const online = window.online = {
         try { if (m) m.textContent = '載入中…'; await this.adLoad(uid); if (m) m.textContent = ''; const u = (this._adUsers || []).find(x => x.uid === uid), q = $('ad-q'); if (q && u) q.value = u.username; } catch (e) { if (m) m.textContent = errMsg(e); }
     },
     async adDelete() {   // 刪除帳號：清除玩家資料、好友、邀請與上線狀態
-        const T = this._adT, adb = this.adminDb || db, m = $('ad-umsg'); if (!T) return;
+        const T = this._adT, adb = this.adminDb || db, m = $('ad-umsg'); if (!T) return; if (!this.adminDb && !this.isAdmin) { toast('只有管理員可以執行這個操作'); return; }
         const nm = T.d.username || T.d.name || T.uid;
-        if (!confirm(`確定要刪除帳號「${nm}」嗎？\n\n玩家資料、存檔、暗物質、戰機、好友與紀錄都會永久刪除，無法復原。`)) return;
+        if (!confirm(`確定要刪除帳號「${nm}」嗎？\n\n玩家資料、存檔、暗物質、戰機、好友與紀錄都會永久刪除，登入帳號也會在對方下次登入時刪除，無法復原。`)) return;
         const typed = prompt(`請再輸入要刪除的帳號「${nm}」以確認：`); if (typed === null) return;
         if (typed.trim().toLowerCase() !== String(nm).toLowerCase()) { if (m) m.textContent = '輸入的帳號不符，已取消刪除'; return; }
         try {
             if (m) m.textContent = '刪除中…';
+            await adb.collection('deleted').doc(T.uid).set({ username: T.d.username || '', name: T.d.name || '', at: Date.now() });   // 先留下「已刪除」標記：擋住這個帳號再寫入資料，並讓對方下次登入時連登入帳號一起刪除
             const U = adb.collection('users').doc(T.uid);
-            for (const sub of ['friends', 'invites']) { const s = await U.collection(sub).get(); await Promise.all(s.docs.map(d => d.ref.delete())); }
+            for (const sub of ['friends', 'invites']) {
+                const s = await U.collection(sub).get();
+                if (sub === 'friends') await Promise.all(s.docs.map(d => adb.collection('users').doc(d.id).collection('friends').doc(T.uid).delete().catch(() => {})));   // 別人好友清單裡的這個帳號也一起移除
+                await Promise.all(s.docs.map(d => d.ref.delete()));
+            }
+            for (const k of ['from', 'to']) { try { const r = await adb.collection('friendRequests').where(k, '==', T.uid).get(); await Promise.all(r.docs.map(d => d.ref.delete().catch(() => {}))); } catch (e) {} }   // 相關的好友邀請
             try { await adb.collection('presence').doc(T.uid).delete(); } catch (e) {}
             await U.delete();
             this._adUsers = (this._adUsers || []).filter(u => u.uid !== T.uid); this._adT = null;
             const b = $('ad-user'); if (b) b.innerHTML = ''; const q = $('ad-q'); if (q) q.value = '';
-            this.adList(); if (m) m.textContent = `已刪除帳號「${nm}」`;
+            this.adList(); if (m) m.textContent = `已刪除帳號「${nm}」：玩家資料已清除；該玩家下次開啟遊戲或登入時，登入帳號本身也會自動刪除、名稱即可重新註冊（想立刻釋出名稱，可到 Firebase → Authentication 手動刪除）`;
         } catch (e) { if (m) m.textContent = errMsg(e); }
     },
     async adFind() {
@@ -3607,7 +3621,7 @@ const online = window.online = {
             <button class="sm red" onclick="online.adReset()">重置此帳號（回到全新狀態）</button> <button class="sm red" onclick="online.adDelete()">刪除此帳號</button>`;
     },
     async adWrite(extra, okMsg) {
-        const T = this._adT, adb = this.adminDb || db, m = $('ad-umsg'); if (!T) return;
+        const T = this._adT, adb = this.adminDb || db, m = $('ad-umsg'); if (!T) return; if (!this.adminDb && !this.isAdmin) { toast('只有管理員可以執行這個操作'); return; }
         try {
             const now = Date.now(), upd = Object.assign({ adminAt: now, updatedAt: now }, extra);
             await adb.collection('users').doc(T.uid).set(upd, { merge: true }); if (m) m.textContent = okMsg || '已更新'; return true;
@@ -3630,12 +3644,12 @@ const online = window.online = {
         if (await this.adWrite(z, '帳號已重置')) { await this.adLoad(T.uid); }
     },
     async adBan() {
-        const T = this._adT, adb = this.adminDb || db, reason = (($('ad-reason') || {}).value || '').trim(); if (!T) return;
+        const T = this._adT, adb = this.adminDb || db, reason = (($('ad-reason') || {}).value || '').trim(); if (!T) return; if (!this.adminDb && !this.isAdmin) { toast('只有管理員可以執行這個操作'); return; }
         if (!reason && !confirm('沒有填寫停權原因，仍要停權嗎？')) return;
         try { await adb.collection('banned').doc(T.uid).set({ uid: T.uid, username: T.d.username || '', name: T.d.name || '', reason, at: Date.now() }); T.ban = { reason }; this.adCard(); $('ad-umsg').textContent = '已加入黑名單'; } catch (e) { $('ad-umsg').textContent = errMsg(e); }
     },
     async adUnban() {
-        const T = this._adT, adb = this.adminDb || db; if (!T) return;
+        const T = this._adT, adb = this.adminDb || db; if (!T) return; if (!this.adminDb && !this.isAdmin) { toast('只有管理員可以執行這個操作'); return; }
         try { await adb.collection('banned').doc(T.uid).delete(); T.ban = null; this.adCard(); $('ad-umsg').textContent = '已解除停權'; } catch (e) { $('ad-umsg').textContent = errMsg(e); }
     },
     adOpen(tab, id) { this.adView((this.adminDb || db).collection(tab === 'group' ? 'groups' : 'dms').doc(id).collection('messages'), id); },
@@ -4070,7 +4084,7 @@ wrap('startCast', function (o, idiom, remote) {
 wrap('finishCast', function (o) { const c = this.casting; if (c && c.remote) { this.endCast(); online.pkApply(c.idiom); } else o.call(this); online.pkNext(); });
 wrap('leave', function (o) { if (this.pkMode) { this.closeDlg(); online.pkSelfDead(); return; } o.call(this); });
 const ADMIN_CODE = '06090721';
-wrap('aboutDialog', function (o) { o.call(this); this.aboutOpen = true; online._code = ''; });
+wrap('aboutDialog', function (o) { o.call(this); this.aboutOpen = true; online._code = ''; });   // 關於視窗不顯示任何輸入欄：直接按鍵盤輸入管理員密碼即可進入管理員介面
 wrap('closeDlg', function (o) { this.aboutOpen = false; o.call(this); });
 wrap('openSettings', function (o) {
     o.call(this); const box = document.querySelector('#dlg .box'); if (!box) return;

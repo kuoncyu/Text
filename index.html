@@ -383,7 +383,7 @@ document.addEventListener('keydown', e => { const t = e.target; if (t && (t.tagN
 // ===== 等比例縮放：遊戲以「虛擬世界」(寬 ≥ 540、高 900 為基準) 運作，畫布再等比例放大到實際螢幕 =====
 // ★ 版本號格式：日期＋英文字母，如 20261116a 是當天第一版、20261116b 是第二版（較新）。
 // ★ 不要手動修改！請在專案資料夾執行  node release.js  ，它會自動產生新版本號、同步 sw.js、並更新 version.json（檔案清單與雜湊值）。
-const APP_VERSION = '20261116c', APP_AUTHOR = '郭柏宏';
+const APP_VERSION = '20261116d', APP_AUTHOR = '郭柏宏';
 const VER_RE = /^\d{8}[a-z]$/;
 const verNewer = (a, b) => VER_RE.test(a) && (!VER_RE.test(b) || a > b);   // a 是否比 b 新（日期大者較新；同一天字母大者較新）
 // ===== 暗物質花費曲線：越高等越貴 =====
@@ -2769,15 +2769,14 @@ const FORCE_UPDATE = {
             try { localStorage.setItem('idiomLatestV', v); } catch (e) {}   // 記下最新版本：離線時也能判斷自己是不是舊版
             if (!verNewer(v, APP_VERSION)) { this.pendingV = null; try { sessionStorage.removeItem('idiomUpd'); } catch (e) {} return; }   // 線上版本不比目前新 → 不用更新
             this.pendingV = v;
-            if (game.gameState === 'INIT' && !this.armed) return;   // 還在初始頁面：先不跳視窗，等玩家點擊開始後才跳出強制更新（見 boot）
             if (this.quiet(game.gameState)) return;   // 不打斷進行中的出擊；這局結束後，回大廳或再次出擊時就會被擋下，必須更新
             this.prompt(v);   // 跳出視窗，玩家按下「下載更新」才清快取並重新載入；沒更新就無法繼續遊玩
         } catch (e) {}
     },
     prompt(newV) {
         if (this.prompting || this.busy) return; this.prompting = true; this.pendingV = newV;
-        this.overlay(`<h2 style="color:#00f2ff;margin:0 0 8px">發現新版本</h2><p>目前版本 ${APP_VERSION} → 最新版本 ${newV}<br>必須更新到最新版本才能繼續遊玩。</p>
-            <button class="btn btn-start" onclick="FORCE_UPDATE.run('${newV}')">下載更新 [Enter]</button>`);
+        this.overlay(`<h2 style="color:#00f2ff;margin:0 0 8px">發現新版本</h2><p>目前版本 ${APP_VERSION} → 最新版本 ${newV}<br>必須更新到最新版本才能繼續遊玩。<br>按下「確定」開始下載更新。</p>
+            <button class="btn btn-start" onclick="FORCE_UPDATE.run('${newV}')">確定 [Enter]</button>`);
     },
     async run(newV) {
         this.busy = true;
@@ -2797,7 +2796,7 @@ const FORCE_UPDATE = {
     },
     retry() { try { sessionStorage.removeItem('idiomUpd'); } catch (e) {} this.busy = false; this.prompting = false; this.check(true); }
 };
-// 更新視窗出現時，擋住鍵盤操作（避免背後的大廳被 Enter／數字鍵誤觸）；Enter 等同按下「下載更新」
+// 更新視窗出現時，擋住鍵盤操作（避免背後的大廳被 Enter／數字鍵誤觸）；Enter 等同按下「確定」
 window.addEventListener('keydown', e => {
     if (!document.getElementById('upd-ov')) return;
     e.preventDefault(); e.stopImmediatePropagation();
@@ -4172,7 +4171,7 @@ const coop = {
     },
     renderRoom() {
         const r = this.room;
-        if (!r) { ui(`<div class="menu-overlay" style="width:min(92vw,440px)"><h2 class="shop-title">多人闖關</h2><p class="muted" style="line-height:1.6;text-align:left">2～3 人協力（禁止單人）。房主建立房間後，把 4 位數房間密碼告訴隊友，隊友輸入即可加入。<br>・難度比一般第 9 關更難（第 10～18 關），小怪與 Boss 血量、攻擊都是 5 倍<br>・成語列全隊共用，誰發動，效果就落在誰身上<br>・發動方式與單人模式相同：成語集滿後直接按快捷數字鍵 1、2、3…（或點成語列）即可發動；任何人發動時，<b>所有玩家暫停 5 秒</b>，等成語顯示完畢才發動<br>・倒下的隊友要等 Boss 被打倒、進入下一關才會以半血復活<br>・隊員之間以 web 直連（WebRTC P2P）傳送畫面與操作，連不上時自動改走雲端備援<br>・掉落的是「銀河幣」，結算時依貢獻（承受傷害 &gt; 輸出 &gt; 蒐集字卡）分紅，可在機庫突破戰機的等級上限</p>
+        if (!r) { ui(`<div class="menu-overlay" style="width:min(92vw,440px)"><h2 class="shop-title">多人闖關</h2><p class="muted" style="line-height:1.6;text-align:left">2～3 人協力（禁止單人）。房主建立房間後，把 4 位數房間密碼告訴隊友，隊友輸入即可加入。<br>・難度比一般第 9 關更難（第 10～18 關），小怪與 Boss 血量、攻擊都是 5 倍<br>・成語列全隊共用，誰發動，效果就落在誰身上<br>・發動方式與單人模式相同：成語集滿後直接按快捷數字鍵 1、2、3…（或點成語列）即可發動；任何人發動時，<b>所有玩家暫停 5 秒</b>，等成語顯示完畢才發動<br>・倒下的隊友要等 Boss 被打倒、進入下一關才會以半血復活<br>・隊員之間以 web 直連（WebRTC P2P）傳送畫面與操作，連不上時自動改走雲端備援<br>・掉落的是「銀河幣」，結算時依貢獻比（承受傷害 &gt; 輸出 &gt; 蒐集字卡）分配，可在機庫突破戰機的等級上限</p>
             <button class="btn btn-start" onclick="coop.create()">建立房間聯機（房主・web 直連）</button>
             <div style="margin:12px 0">輸入房間密碼加入<input class="inp" id="cp-code" maxlength="4" inputmode="numeric" placeholder="4 位數房間密碼"><button class="btn" onclick="coop.join(document.getElementById('cp-code').value)">加入房間</button></div>${BACK}</div>`); return; }
         const d = r.data || {}, host = r.role === 'host', me = this.me(), M = this.members(), mine = (d.members || {})[me] || {};
@@ -4255,7 +4254,7 @@ const coop = {
     },
     withAim(pos, fn) { const real = G.player.pos; G.player.pos = pos; try { return fn(); } finally { G.player.pos = real; } },
     credit(id, k, v) { if (!G.coopHost || !(v > 0) || !id) return; const s = this.stats[id] || (this.stats[id] = { dmg: 0, tank: 0, chr: 0 }); s[k] += v; },
-    coin(x, y, amount) {   // 銀河幣：進入團隊獎池，結算時依貢獻分紅
+    coin(x, y, amount) {   // 銀河幣：進入團隊獎池，結算時依貢獻比分配
         const c = Math.max(1, Math.round(amount * (1 + 0.25 * (G.currentStage - 1)) * COIN_K)); this.pool += c;
         G.burst(x, y, c >= 20 ? 10 : 3); G.showFloatText('+' + c + ' 銀河幣', x, y, '#ffd700');
     },
@@ -4573,7 +4572,7 @@ const coop = {
             return `<div style="margin-bottom:4px;opacity:${dead ? .55 : 1}"><b style="color:${id === me ? '#ffea00' : '#9ff'}">${esc(this.nm[id] || '')}</b> ${dead ? '✖' : ''} <span style="color:#ffd700">貢獻 ${Math.round((sh[id] || 0) * 100)}%</span><div style="width:96px;height:5px;background:#222"><i style="display:block;height:5px;width:${hp * 100}%;background:${hp > .3 ? '#33ff88' : '#ff3344'}"></i></div></div>`; }).join('');
     },
 
-    // ================= 結算：依貢獻分紅 =================
+    // ================= 結算：依貢獻比 =================
     calc(ids) {
         const n = ids.length || 1, tot = { tank: 0, dmg: 0, chr: 0 }; ids.forEach(id => { const s = this.stats[id] || {}; Object.keys(tot).forEach(k => { tot[k] += s[k] || 0; }); });
         const act = Object.keys(tot).filter(k => tot[k] > 0), ws = act.reduce((a, k) => a + COOP_W[k], 0);
@@ -4583,7 +4582,7 @@ const coop = {
         const sum = rows.reduce((a, r) => a + r.share, 0) || 1; rows.forEach(r => { r.share /= sum; r.coins = Math.floor(this.pool * r.share); });
         return rows;
     },
-    end(win) {   // 主控端：結束這場，算出分紅並通知所有人
+    end(win) {   // 主控端：結束這場，算出貢獻比並通知所有人
         if (this.ended) return; this.ended = true;
         const rows = this.calc(this.order.filter(id => !this.P[id].left)); rows.forEach(r => { r.tank = Math.round(r.tank); r.dmg = Math.round(r.dmg); r.chr = Math.round(r.chr); });
         const res = { win: !!win, st: G.currentStage, sb: G.currentSub, pool: Math.round(this.pool), rows, mid: this.mid };
@@ -4604,8 +4603,8 @@ const coop = {
         const mine = r.rows.find(x => x.uid === me);
         ui(`<div class="menu-overlay" style="width:min(96vw,560px)"><h1 style="color:${win ? 'var(--neon-gold)' : '#ff6b6b'};margin:0 0 4px">${win ? '多人闖關・完全勝利' : '多人闖關・任務結束'}</h1>
             <p style="margin:4px 0 8px">到達第 ${r.st + 9} 關　團隊銀河幣 <b style="color:#ffd700">${num(r.pool)}</b></p>
-            <table style="width:100%;border-collapse:collapse;text-align:center;font-size:.85rem;line-height:1.35"><tr style="color:#9ab"><th style="text-align:left">隊員</th><th>承受傷害</th><th>輸出傷害</th><th>蒐集字卡</th><th>分紅</th><th>銀河幣</th></tr>${rows}</table>
-            <p class="muted" style="margin:8px 0">分紅＝承受傷害 45%＋輸出傷害 35%＋蒐集字卡 20%（各項看你占全隊的比例），再保留 15% 出席保底${mine ? '' : '。你中途離開，沒有分紅'}。</p>
+            <table style="width:100%;border-collapse:collapse;text-align:center;font-size:.85rem;line-height:1.35"><tr style="color:#9ab"><th style="text-align:left">隊員</th><th>承受傷害</th><th>輸出傷害</th><th>蒐集字卡</th><th>貢獻比</th><th>銀河幣</th></tr>${rows}</table>
+            <p class="muted" style="margin:8px 0">貢獻比＝承受傷害 45%＋輸出傷害 35%＋蒐集字卡 20%（各項看你占全隊的比例），再保留 15% 出席保底${mine ? '' : '。你中途離開，沒有銀河幣'}。</p>
             ${mine ? `<p style="color:#ffd700">你獲得 <b>${num(mine.coins)}</b> 銀河幣，持有 ${num(G.galaxy)}。可到「戰機管理」突破等級上限。</p>` : ''}
             <button class="btn btn-start" onclick="coop.again()">回到房間</button><button class="btn" onclick="coop.toLobby()">返回大廳</button></div>`);
     },
@@ -4865,7 +4864,7 @@ const lcoop = window.lcoop = {
         ui(`<div class="menu-overlay" style="width:min(96vw,600px)"><h1 style="color:${win ? 'var(--neon-gold)' : '#ff6b6b'};margin:0 0 4px">${win ? '同機多人闖關・完全勝利' : '同機多人闖關・任務結束'}</h1>
             <p style="margin:4px 0 8px">到達第 ${r.st + 9} 關　團隊銀河幣 <b style="color:#ffd700">${num(r.pool)}</b></p>
             <table style="width:100%;border-collapse:collapse;text-align:center;font-size:.85rem;line-height:1.35"><tr style="color:#9ab"><th style="text-align:left">玩家</th><th>承受傷害</th><th>輸出傷害</th><th>蒐集字卡</th><th>銀河幣</th><th>帳號</th></tr>${rows}</table>
-            <p class="muted" style="margin:8px 0">分紅＝承受傷害 45%＋輸出傷害 35%＋蒐集字卡 20%，再保留 15% 出席保底。訪客不領獎勵。銀河幣存在各自的帳號裡，要升級請用該帳號登入（成為主控端）後到「戰機管理」。${failed ? '<br><b style="color:#ff9aa8">有帳號上傳失敗：請確認網路後按「重試上傳」，離開前請務必成功。</b>' : ''}</p>
+            <p class="muted" style="margin:8px 0">貢獻比＝承受傷害 45%＋輸出傷害 35%＋蒐集字卡 20%，再保留 15% 出席保底。訪客不領獎勵。銀河幣存在各自的帳號裡，要升級請用該帳號登入（成為主控端）後到「戰機管理」。${failed ? '<br><b style="color:#ff9aa8">有帳號上傳失敗：請確認網路後按「重試上傳」，離開前請務必成功。</b>' : ''}</p>
             ${failed ? '<button class="btn" onclick="lcoop.retry()">重試上傳</button>' : ''}<button class="btn btn-start" onclick="lcoop.again()">再玩一場</button><button class="btn" onclick="lcoop.toLobby()">返回大廳</button></div>`);
     },
     pending() { return (this.pl || []).some(p => p.kind === 'acct' && (p.up === 'fail' || p.up === 'busy')); },

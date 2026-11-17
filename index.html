@@ -383,7 +383,7 @@ document.addEventListener('keydown', e => { const t = e.target; if (t && (t.tagN
 // ===== 等比例縮放：遊戲以「虛擬世界」(寬 ≥ 540、高 900 為基準) 運作，畫布再等比例放大到實際螢幕 =====
 // ★ 版本號格式：日期＋英文字母，如 20261116a 是當天第一版、20261116b 是第二版（較新）。
 // ★ 不要手動修改！請在專案資料夾執行  node release.js  ，它會自動產生新版本號、同步 sw.js、並更新 version.json（檔案清單與雜湊值）。
-const APP_VERSION = '20261116k', APP_AUTHOR = '郭柏宏';
+const APP_VERSION = '20261117a', APP_AUTHOR = '郭柏宏';
 const VER_RE = /^\d{8}[a-z]$/;
 const verNewer = (a, b) => VER_RE.test(a) && (!VER_RE.test(b) || a > b);   // a 是否比 b 新（日期大者較新；同一天字母大者較新）
 // ===== 暗物質花費曲線：越高等越貴 =====
@@ -3156,7 +3156,7 @@ const online = window.online = {
         ({ LOGIN: () => this.renderLogin(false), RANK: () => this.renderRank('bestScore'), FRIENDS: () => this.renderFriends(), PK: () => this.renderPK(), COOP: () => coop.renderRoom(), NET: () => this.renderNet(),
            DB: () => this.renderDB(), DB2: () => this.renderDex('ship'), STATS: () => this.renderStats(), TUTORIAL: () => this.renderTutorial(0), ADMIN: () => this.renderAdmin('users') }[st])();
     },
-    refresh() { const st = G.gameState; if (st === 'FRIENDS') this.renderFriends(); else if (st === 'PK') this.renderPK(); this.updateFriendDot(); this.renderInvites(); },
+    refresh() { const st = G.gameState; if (st === 'FRIENDS') this.renderFriends(); else if (st === 'PK') this.renderPK(); else if (st === 'COOP' && coop.room && coop.room.role === 'host') coop.renderRoom(); this.updateFriendDot(); this.renderInvites(); },
     updateFriendDot() { const d = $('fr-dot'); if (!d) return; const n = this.reqIn.length; d.textContent = n > 99 ? '99+' : n; d.style.display = n ? 'block' : 'none';
         const t = d.parentNode && d.parentNode.querySelector('small'); if (t) t.textContent = '聊天／邀請' + (n ? '（' + n + ' 筆邀請）' : ''); },
     renderNet() {   // 大廳「連線對戰」：PK 對戰、闖關對戰兩個子功能磚
@@ -3291,7 +3291,7 @@ const online = window.online = {
         on(db.collection('friendRequests').where('from', '==', uid).where('status', '==', 'accepted'), s => s.docs.forEach(d => { const x = d.data();
             U.collection('friends').doc(x.to).set({ name: x.toName, ts: Date.now() }).then(() => d.ref.delete()).catch(() => {}); }));
         on(U.collection('invites'), s => { const old = new Set(this.invites.map(i => i.code)); this.invites = s.docs.map(d => d.data());
-            const fresh = this.liveInvites().filter(i => !old.has(i.code)); fresh.forEach(i => toast(`${i.fromName} 邀請你 PK！`, 5000)); this.refresh(); if (fresh.length) this.popInvite(); });
+            const fresh = this.liveInvites().filter(i => !old.has(i.code)); fresh.forEach(i => toast(i.mode === 'coop' ? `${i.fromName} 邀請你一起多人闖關！` : `${i.fromName} 邀請你 PK！`, 5000)); this.refresh(); if (fresh.length) this.popInvite(); });
         on(db.collection('groups').where('members', 'array-contains', uid), s => { this.groups = s.docs.map(d => Object.assign({ id: d.id }, d.data())); this.syncWatch(); this.chatSel(); });
         this.startPresence(); this.syncWatch();
     },
@@ -3301,7 +3301,7 @@ const online = window.online = {
             <div class="row"><input class="inp" id="fr-in" style="flex:1;margin:0" placeholder="輸入對方帳號加好友" value="${esc(keep)}"><button class="sm" onclick="online.addFriend(document.getElementById('fr-in').value)">送出邀請</button></div>
             ${this.liveInvites().length ? `<h4>PK 邀請</h4>` + this.liveInvites().map(i => `<div class="row"><span>${esc(i.fromName)} 邀請你 PK</span><button class="sm" onclick="online.acceptInvite('${esc(i.code)}')">加入</button><button class="sm red" onclick="online.declineInvite('${esc(i.code)}')">拒絕</button></div>`).join('') : ''}
             ${this.reqIn.length ? `<h4>好友邀請</h4>` + this.reqIn.map(r => `<div class="row"><span>${esc(r.fromName)}</span><button class="sm" onclick="online.acceptReq('${r.id}')">接受</button><button class="sm red" onclick="online.declineReq('${r.id}')">拒絕</button></div>`).join('') : ''}
-            <h4>好友列表（${this.friends.length}）</h4><div class="lst">${this.friends.length ? this.friends.map((f, i) => `<div class="row"><b class="fnum">${i + 1}.</b><span class="fname" onclick="online.showPlayer('${f.uid}')" title="點擊查看好友資料">${this.friendTag(f.uid)}${esc(f.name)}</span><button class="sm" onclick="online.openChat('dm','${f.uid}')">聊天${this.unr && this.unr['dm:' + f.uid] ? '（' + (this.unr['dm:' + f.uid] > 99 ? '99+' : this.unr['dm:' + f.uid]) + '）' : ''}</button><button class="sm" onclick="online.invite('${f.uid}')">邀請 PK</button><button class="sm red" onclick="online.removeFriend('${f.uid}')">刪除</button></div>`).join('') : '<p class="muted">還沒有好友，輸入對方帳號試試</p>'}</div>${BACK}</div>`);
+            <h4>好友列表（${this.friends.length}）</h4><div class="lst">${this.friends.length ? this.friends.map((f, i) => `<div class="row"><b class="fnum">${i + 1}.</b><span class="fname" onclick="online.showPlayer('${f.uid}')" title="點擊查看好友資料">${this.friendTag(f.uid)}${esc(f.name)}</span><button class="sm" onclick="online.openChat('dm','${f.uid}')">聊天${this.unr && this.unr['dm:' + f.uid] ? '（' + (this.unr['dm:' + f.uid] > 99 ? '99+' : this.unr['dm:' + f.uid]) + '）' : ''}</button><button class="sm" onclick="online.invite('${f.uid}')">邀請 PK</button><button class="sm" onclick="coop.invite('${f.uid}')">邀請闖關</button><button class="sm red" onclick="online.removeFriend('${f.uid}')">刪除</button></div>`).join('') : '<p class="muted">還沒有好友，輸入對方帳號試試</p>'}</div>${BACK}</div>`);
         const inp = $('fr-in'); if (inp) inp.onkeydown = e => { if (e.key === 'Enter') this.addFriend(inp.value); };
     },
     async addFriend(name) {
@@ -3335,7 +3335,8 @@ const online = window.online = {
     acceptInvite(code) {   // 聊天室／好友頁點「加入」：直接進到對方的房間
         const i = this.invites.find(x => x.code === code);
         if (['PLAYING', 'TRANSITION'].includes(G.gameState)) return toast('戰鬥中無法加入，請先結束出擊');
-        if (this.pk) return toast('你已經在房間裡，請先離開目前的房間');
+        if (this.pk || coop.room) return toast('你已經在房間裡，請先離開目前的房間');
+        if (i && i.mode === 'coop') { this.dropInvite(code); G.closeDlg(); coop.viaNet = true; coop.join(code, i.fromUid); return; }   // 多人闖關邀請：直接加入對方的闖關房間
         this.dropInvite(code); G.closeDlg(); G.setState('PK'); this.joinRoom(code, i && i.fromUid);
     },
     declineInvite(code) {   // 拒絕：移除邀請，並在對方的房間標記「已拒絕邀請」
@@ -3350,12 +3351,13 @@ const online = window.online = {
     renderInvites() {   // 聊天室上方的 PK 邀請通知（所有分頁都看得到）
         const box = $('ch-inv'); if (!box) return; const L = this.liveInvites();
         box.style.display = L.length ? 'block' : 'none';
-        box.innerHTML = L.map(i => `<div class="iv"><span>⚔ <b>${esc(i.fromName)}</b> 邀請你 PK</span><button class="sm" onclick="online.acceptInvite('${esc(i.code)}')">加入</button><button class="sm red" onclick="online.declineInvite('${esc(i.code)}')">拒絕</button></div>`).join('');
+        box.innerHTML = L.map(i => `<div class="iv"><span>${i.mode === 'coop' ? '🚀' : '⚔'} <b>${esc(i.fromName)}</b> ${i.mode === 'coop' ? '邀請你多人闖關' : '邀請你 PK'}</span><button class="sm" onclick="online.acceptInvite('${esc(i.code)}')">加入</button><button class="sm red" onclick="online.declineInvite('${esc(i.code)}')">拒絕</button></div>`).join('');
         this.paintBadge();
     },
     async invite(uid, name) {   // 不必是好友，任何玩家都能邀請
         try {
             if (uid === this.user.uid) return;
+            if (coop.room) return toast('你正在多人闖關房間裡，請先離開再邀請 PK');
             if (!this.pk && ['PLAYING', 'TRANSITION'].includes(G.gameState)) return toast('戰鬥中無法建立房間，請先結束出擊');
             G.closeDlg();
             if (!this.pk) { G.setState('PK'); await this.createRoom(); }
@@ -3680,10 +3682,10 @@ const online = window.online = {
         tab = tab || 'idiom';
         const top = tab === 'idiom' ? 'idiom' : tab === 'music' ? 'music' : 'data';   // 三大分類
         const TOP = [['idiom', '成語資料', '📖', `${CONFIG.IDIOMS.length} 個成語・9 種招式`, 'idiom', '#ffd400'],
-            ['data', '戰鬥資料', '🛸', `${SHIPS.length} 戰機・8 敵機・9 Boss`, 'ship', '#00f2ff'],
+            ['data', '戰鬥資料', '🛸', `${SHIPS.length} 戰機・8 敵機・9+9 Boss`, 'ship', '#00f2ff'],
             ['music', '音樂庫', '🎵', `${trackList().length} 首曲目`, 'music', '#ff3bd4']];
-        const SUB = [['ship', '我方戰機', '🚀'], ['enemy', '敵方戰機', '👾'], ['boss', 'Boss', '👹']];
-        const body = { idiom: () => this.dexIdiom(a, b), ship: () => this.dexShips(), enemy: () => this.dexEnemies(), boss: () => this.dexBosses(), music: () => this.dexMusic() }[tab]();
+        const SUB = [['ship', '我方戰機', '🚀'], ['enemy', '敵方戰機', '👾'], ['boss', 'Boss', '👹'], ['cboss', 'Boss（多人闖關）', '🛰']];
+        const body = { idiom: () => this.dexIdiom(a, b), ship: () => this.dexShips(), enemy: () => this.dexEnemies(), boss: () => this.dexBosses(), cboss: () => this.dexCoopBosses(), music: () => this.dexMusic() }[tab]();
         const sub = top === 'data' ? `<div class="cx-sub">${SUB.map(s => `<button class="${s[0] === tab ? 'on' : ''}" onclick="online.renderDex('${s[0]}')">${s[2]} ${s[1]}</button>`).join('')}</div>` : '';
         ui(`<div class="menu-overlay cx" style="--c:${TOP.find(x => x[0] === top)[5]}"><div class="cx-h"><h2 class="shop-title">圖鑑</h2><small>CODEX</small></div>
             <div class="cx-top">${TOP.map(x => `<button class="${x[0] === top ? 'on' : ''}" style="--c:${x[5]}" onclick="online.renderDex('${x[4]}')"><span class="ic">${x[2]}</span><b>${x[1]}</b><small>${x[3]}</small></button>`).join('')}</div>
@@ -3738,6 +3740,24 @@ const online = window.online = {
                 <div class="inf"><h3>第 ${st} 關<small>${bossLabel(st)}</small>${st === 9 ? '<span class="tg gold">最終 Boss</span>' : ''}</h3>
                 <div class="chips2"><span>血量 <b>${hp * SHOW}</b></span><span>裝甲等級 <b>${(BOSS_ARMOR[ty] || 0) + Math.floor(st / 2)}</b></span><span>能力加成 <b>${Math.round(bm.f * 100)}%</b></span></div>
                 <div class="t">${inf.desc}<br><b>移動</b> ${MV[cfg.mv]}　<b>攻擊</b> ${cfg.sh.map(x => SH[x]).join('、')}<br><b>建議</b> ${inf.tip}<br><b>屬性相剋</b> ${matchupText(ty)}</div></div></div>`; }).join('');
+    },
+    dexCoopBosses() {   // 圖鑑：多人闖關 Boss（難度第 10～18 關；血量、攻擊 ×5，各有專屬詞綴）
+        const MV = { hover: '懸停漂移', sweep: '左右橫掃', orbit: '橢圓環繞', dash: '隨機衝刺', chase: '追蹤玩家', zigzag: '快速折返' }, SH = { aim: '瞄準單發', aim3: '三連瞄準', burst: '扇形彈', ring: '環形彈', spiral: '螺旋彈', rain: '雨狀彈', wall: '彈牆（留缺口）', curtain: '密集彈幕' };
+        const AF = { combo: ['連擊護盾', '🛡'], heavy: ['重擊護甲', '🪨'], aegis: ['破甲彈', '🔱'], quad: ['四機同體', '✚'], wide: ['巨艦', '🚢'], final: ['終焉', '☠'] };
+        const REC = { combo: ['storm'], heavy: ['assassin', 'blaze', 'lance'], aegis: ['bastion'], quad: ['nova'], wide: ['wind'], final: ['bastion', 'storm', 'assassin', 'wind'] };
+        const WHY = { combo: '護盾在時傷害為 0，要全隊在 1 秒內湊足命中數才破盾 → 射速最快的連射號破盾最快，其他隊友趁破盾空檔輸出。', heavy: '單發傷害低於門檻一律 0 → 靠單發重擊的狙擊號、烈焰號、穿甲號輸出，輕彈戰機改負責撿字卡與吸引火力。', aegis: 'Boss 子彈對一般戰機傷害 ×3，堡壘號只吃 1 點 → 隊友躲在堡壘號後面輸出，堡壘號負責擋。', quad: '上下左右四台共用一條血條，會被包夾 → 全向火網的環陣號最能同時照顧四個方向。', wide: '船體與螢幕同寬、無法移動、彈幕極密，擊中我方還會回血 → 靈活的疾風號負責穿梭閃躲，其他人集中火力速戰速決。', final: '每 ' + FINAL_FORM_T + ' 秒輪流切換連擊護盾／重擊護甲／破甲彈／吸能的簡化版 → 需要全隊依形態分工、隨時換人主攻。' };
+        const hpOf = (st, N) => { const ty = BOSS_TYPES[st], M = bossMods(9, ty); return Math.round(5000 * M.hp * COOP_HP * (1 + 0.08 * (st - 1)) * (0.75 + 0.25 * N)) * SHOW; };
+        const fmt = n => n.toLocaleString('en-US');
+        const intro = `<div class="cx-card" style="--c:#00e5ff"><div class="pic"><span style="font-size:2.6rem">🛰</span></div><div class="inf"><h3>多人闖關 Boss<small>2～3 人協力・難度第 10～18 關</small></h3><div class="t">用的是單機同一批 9 隻 Boss，但<b>難度從「比第 9 關更難」起跳</b>：血量與攻擊都是 <b>${COOP_HP} 倍</b>，血量再隨關卡與人數增加（3 人比 2 人更厚）。每隻 Boss 另有<b>專屬詞綴</b>，必須靠隊友分工、選對戰機才打得動。</div></div></div>`;
+        return intro + [1, 2, 3, 4, 5, 6, 7, 8, 9].map(st => { const ty = BOSS_TYPES[st], inf = BOSS_INFO[ty], cfg = BOSS_CFG[st], M = bossMods(9, ty), af = COOP_AFFIX[st], A = AF[af] || ['—', ''], col = AFFIX_COL[af] || '#ffaa00';
+            const atk = Math.round(M.dmg * COOP_ATK * (af === 'wide' ? WIDE_DMG : 1) * 10) / 10, rate = Math.round(M.rate * (af === 'quad' ? 0.5 : 1) * 100) / 100;
+            const shs = af === 'wide' ? ['curtain', 'aim3'] : cfg.sh, mv = af === 'wide' ? '無法移動（寬度＝螢幕）' : MV[cfg.mv];
+            const pic = af === 'quad' ? `<div style="display:grid;grid-template-columns:1fr 1fr;gap:2px;width:84px">${[0, 90, -90, 180].map(r => `<img src="assets/boss_${st}.png" style="width:40px;height:40px;object-fit:contain;transform:rotate(${r}deg)" onerror="this.style.visibility='hidden'">`).join('')}</div>` : `<img src="assets/boss_${st}.png" onerror="this.style.visibility='hidden'">`;
+            const forms = af === 'final' ? `<br><b>形態輪替</b> ${FINAL_FORMS.map(k => FORM_TXT[k]).join('；')}` : '';
+            return `<div class="cx-card boss" style="--c:${col}"><div class="pic">${pic}</div>
+                <div class="inf"><h3>闖關 ${st + 9}<small>${bossLabel(st)}</small><span class="tg gold" style="background:${col};color:#111">${A[1]} ${A[0]}</span></h3>
+                <div class="chips2"><span>血量 2 人 <b>${fmt(hpOf(st, 2))}</b></span><span>3 人 <b>${fmt(hpOf(st, 3))}</b></span><span>攻擊 <b>×${atk}</b></span><span>射速 <b>×${rate}</b></span></div>
+                <div class="t"><b>專屬詞綴</b> <span style="color:${col}">${(af === 'final' ? '終焉（輪流切換）' : AFFIX_TXT[af](st))}</span>${forms}<br><b>移動</b> ${mv}　<b>攻擊</b> ${shs.map(x => SH[x]).join('、')}<br><b>對策</b> ${WHY[af]}<br><b>推薦戰機</b> ${REC[af].map(id => { const S = SHIPS.find(x => x.id === id); return `<span style="display:inline-flex;align-items:center;gap:3px;margin-right:8px"><img src="${shipPic(id)}" style="width:22px;height:22px;object-fit:contain" onerror="this.style.display='none'">${S.name}</span>`; }).join('')}</div></div></div>`; }).join('');
     },
     dexMusic() {
         const T = trackList(), grp = [...new Set(T.map(x => x.grp))];
@@ -4193,7 +4213,7 @@ const coop = {
             toast('建立房間失敗，請再試一次');
         } catch (e) { toast(errMsg(e)); }
     },
-    async join(code) {
+    async join(code, hostUid) {
         code = (code || '').trim(); if (!/^\d{4}$/.test(code)) return toast('請輸入 4 位數房間密碼'); if (this.room) return;
         try {
             const ref = online.roomRef(code), me = this.me();
@@ -4201,7 +4221,10 @@ const coop = {
                 const s = await tx.get(ref); if (!s.exists || s.data().mode !== 'coop' || s.data().state !== 'lobby') throw new Error('找不到這個多人闖關房間，或已經開始');
                 const mem = s.data().members || {}, n = Object.values(mem).filter(Boolean).length;
                 if (!mem[me] && n >= 3) throw new Error('房間已滿（最多 3 人）');
-                tx.update(ref, { ['members.' + me]: this.memberDoc(G.shipId, false) });
+                if (hostUid && s.data().host !== hostUid) throw new Error('這個邀請已失效');
+                const patch = { ['members.' + me]: this.memberDoc(G.shipId, false) };
+                if ((s.data().invited || {})[me]) patch['invited.' + me + '.st'] = 'joined';   // 房主那邊顯示「已加入」
+                tx.update(ref, patch);
             });
             this.enter(code, 'guest');
         } catch (e) { toast(e && e.message && !/^(Missing|FirebaseError)/.test(e.message) ? e.message : errMsg(e)); }
@@ -4240,9 +4263,34 @@ const coop = {
         const M = this.members(); if (M.length < 2) return toast('多人闖關至少 2 人才能出擊（禁止單人）'); if (!M.every(m => m.ready)) return toast('還有隊員沒有準備');
         online.roomRef(this.room.code).update({ state: 'playing', startAt: Date.now(), order: M.map(m => m.id), result: firebase.firestore.FieldValue.delete() }).catch(e => toast(errMsg(e)));
     },
+    async invite(uid, name) {   // 邀請好友加入多人闖關房間（沒有房間就先建立一個）
+        try {
+            if (!online.user || uid === online.user.uid) return;
+            if (online.pk) return toast('你正在 PK 房間裡，請先離開再邀請闖關');
+            if (!this.room && ['PLAYING', 'TRANSITION'].includes(G.gameState)) return toast('戰鬥中無法建立房間，請先結束出擊');
+            if (this.room && this.room.role !== 'host') return toast('只有房主可以邀請好友');
+            if (this.local) return;
+            if (!this.room) { G.closeDlg(); this.viaNet = true; await this.create(); }
+            const r = this.room; if (!r || r.role !== 'host') return;
+            const M = this.members(); if (M.length >= 3 && !M.some(m => m.id === uid)) return toast('房間已滿（最多 3 人）');
+            const f = online.friends.find(x => x.uid === uid); name = name || (f && f.name) || '';
+            await db.collection('users').doc(uid).collection('invites').doc(r.code).set({ code: r.code, mode: 'coop', fromUid: online.user.uid, fromName: online.profile.name, ts: Date.now() });
+            await online.roomRef(r.code).update({ ['invited.' + uid]: { name, st: 'pending', ts: Date.now() } });
+            toast('已送出闖關邀請');
+        } catch (e) { toast(errMsg(e)); }
+    },
+    inviteHtml(d, M) {   // 房主：好友列表（一鍵邀請）＋已邀請玩家的回應狀態
+        const inRoom = new Set(M.map(m => m.id)), full = M.length >= 3;
+        const fl = online.friends.map(f => { const on = online.isOnline(f.uid), inv = (d.invited || {})[f.uid], pend = inv && inv.st === 'pending';
+            return `<div class="row"><span>${esc(f.name)}${on ? ' <small style="color:#38ef7d">● 在線</small>' : ''}</span>${inRoom.has(f.uid) ? '<b style="color:#38ef7d">已在房間</b>' : `<button class="sm" ${full ? 'disabled' : ''} onclick="coop.invite('${f.uid}')">${pend ? '再次邀請' : '邀請'}</button>`}</div>`; }).join('');
+        const E = Object.entries(d.invited || {});
+        const lab = (id, x) => x.st === 'declined' ? ['已拒絕邀請', '#ff6b6b'] : x.st === 'joined' ? (inRoom.has(id) ? ['已加入', '#38ef7d'] : ['已離開', '#8a93a6']) : ['等待回應中…', '#9ab'];
+        return `<h4>邀請好友（${online.friends.length}）</h4><div class="lst" style="max-height:170px;overflow:auto">${fl || '<p class="muted">還沒有好友，到「好友」頁面加好友後即可邀請</p>'}</div>`
+            + (E.length ? `<h4>已邀請的玩家</h4>` + E.map(([id, x]) => { const l = lab(id, x); return `<div class="row"><span>${esc(x.name || '玩家')}</span><b style="color:${l[1]}">${l[0]}</b></div>`; }).join('') : '');
+    },
     renderRoom() {
         const r = this.room;
-        if (!r) { ui(`<div class="menu-overlay" style="width:min(92vw,440px)"><h2 class="shop-title">多人闖關</h2><p class="muted" style="line-height:1.6;text-align:left">2～3 人協力（禁止單人）。房主建立房間後，把 4 位數房間密碼告訴隊友，隊友輸入即可加入。<br>・難度比一般第 9 關更難（第 10～18 關），小怪與 Boss 血量、攻擊都是 5 倍<br>・成語列全隊共用，誰發動，效果就落在誰身上<br>・發動方式與單人模式相同：成語集滿後直接按快捷數字鍵 1、2、3…（或點成語列）即可發動；任何人發動時，<b>所有玩家暫停 5 秒</b>，等成語顯示完畢才發動<br>・倒下的隊友要等 Boss 被打倒、進入下一關才會以半血復活<br>・隊員之間以 web 直連（WebRTC P2P）傳送畫面與操作，連不上時自動改走雲端備援<br>・每隻 Boss 另有專屬能力（連擊護盾／重擊護甲／破甲彈／四機同體／巨艦；終焉會輪流切換各種形態的簡化版），要靠隊友分工：連射號、狙擊號與烈焰號、堡壘號、環陣號、疾風號各有用武之地<br>・掉落的是「銀河幣」，結算時依貢獻比（承受傷害 &gt; 輸出 &gt; 蒐集字卡）分配，可在機庫突破戰機的等級上限</p>
+        if (!r) { ui(`<div class="menu-overlay" style="width:min(92vw,440px)"><h2 class="shop-title">多人闖關</h2><p class="muted" style="line-height:1.6;text-align:left">2～3 人協力（禁止單人）。房主建立房間後，可以直接從房間下方的<b>好友列表</b>邀請好友（對方會收到通知，按「加入」即可），或把 4 位數房間密碼告訴隊友輸入加入。<br>・難度比一般第 9 關更難（第 10～18 關），小怪與 Boss 血量、攻擊都是 5 倍<br>・成語列全隊共用，誰發動，效果就落在誰身上<br>・發動方式與單人模式相同：成語集滿後直接按快捷數字鍵 1、2、3…（或點成語列）即可發動；任何人發動時，<b>所有玩家暫停 5 秒</b>，等成語顯示完畢才發動<br>・倒下的隊友要等 Boss 被打倒、進入下一關才會以半血復活<br>・隊員之間以 web 直連（WebRTC P2P）傳送畫面與操作，連不上時自動改走雲端備援<br>・每隻 Boss 另有專屬能力（連擊護盾／重擊護甲／破甲彈／四機同體／巨艦；終焉會輪流切換各種形態的簡化版），要靠隊友分工：連射號、狙擊號與烈焰號、堡壘號、環陣號、疾風號各有用武之地<br>・掉落的是「銀河幣」，結算時依貢獻比（承受傷害 &gt; 輸出 &gt; 蒐集字卡）分配，可在機庫突破戰機的等級上限</p>
             <button class="btn btn-start" onclick="coop.create()">建立房間聯機（房主・web 直連）</button>
             <div style="margin:12px 0">輸入房間密碼加入<input class="inp" id="cp-code" maxlength="4" inputmode="numeric" placeholder="4 位數房間密碼"><button class="btn" onclick="coop.join(document.getElementById('cp-code').value)">加入房間</button></div>${BACK}</div>`); return; }
         const d = r.data || {}, host = r.role === 'host', me = this.me(), M = this.members(), mine = (d.members || {})[me] || {};
@@ -4255,6 +4303,7 @@ const coop = {
             <h4>選擇戰機（含銀河幣突破的等級）</h4><div>${owned.map(S => `<button class="chip ${G.shipId === S.id ? 'on' : ''}" onclick="coop.setShip('${S.id}')">${S.name}</button>`).join('')}</div>
             <div style="display:flex;gap:8px;margin-top:10px">${host ? '' : `<button class="btn ${mine.ready ? '' : 'btn-start'}" onclick="coop.ready()">${mine.ready ? '取消準備' : '準備'}</button>`}
             ${host ? `<button class="btn btn-start" ${canStart ? '' : 'disabled'} onclick="coop.start()">${M.length < 2 ? '需要至少 2 人' : '出擊'}</button>` : ''}</div>
+            ${host && d.state === 'lobby' ? this.inviteHtml(d, M) : ''}
             <button class="btn" style="margin-top:10px" onclick="coop.leaveRoom(true)">離開房間</button></div>`);
     },
 

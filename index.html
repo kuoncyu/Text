@@ -383,7 +383,7 @@ document.addEventListener('keydown', e => { const t = e.target; if (t && (t.tagN
 // ===== 等比例縮放：遊戲以「虛擬世界」(寬 ≥ 540、高 900 為基準) 運作，畫布再等比例放大到實際螢幕 =====
 // ★ 版本號格式：日期＋英文字母，如 20261116a 是當天第一版、20261116b 是第二版（較新）。
 // ★ 不要手動修改！請在專案資料夾執行  node release.js  ，它會自動產生新版本號、同步 sw.js、並更新 version.json（檔案清單與雜湊值）。
-const APP_VERSION = '20261117a', APP_AUTHOR = '郭柏宏';
+const APP_VERSION = '20261117b', APP_AUTHOR = '郭柏宏';
 const VER_RE = /^\d{8}[a-z]$/;
 const verNewer = (a, b) => VER_RE.test(a) && (!VER_RE.test(b) || a > b);   // a 是否比 b 新（日期大者較新；同一天字母大者較新）
 // ===== 暗物質花費曲線：越高等越貴 =====
@@ -4161,6 +4161,7 @@ const COOP_FIELDS = ['hp', 'maxHp', 'shield', 'st', 'skin', 'shipId', 'covLv', '
 // aegis 破甲彈：Boss 子彈對非堡壘號傷害 ×AEGIS_MUL；堡壘號一律只受 1 點 → 隊友躲在堡壘號後面輸出
 // quad  四機同體：Boss 分成上下左右四台，共用同一條血條 → 環陣號全向火網
 const COOP_AFFIX = { 1: 'combo', 2: 'heavy', 3: 'quad', 4: 'aegis', 5: 'heavy', 6: 'combo', 7: 'aegis', 8: 'wide', 9: 'final' };   // 想換關卡就改這張表（final＝終焉：輪流切換各種詞綴的閹割版）
+window.COOP_AFFIX = COOP_AFFIX;   // Game.draw（第一個 script）也要讀這張表；這裡在 IIFE 裡，不公開的話 Boss 一出現畫面迴圈就會因 ReferenceError 中斷而卡死
 const COMBO_WIN = 1.0, COMBO_DEDUP = 0.08, COMBO_NEED = { 1: 5, 6: 8 }, COMBO_CD = 5, HEAVY_MIN = { 2: 6, 5: 10 }, AEGIS_MUL = 3, WIDE_HEAL = 0.05, WIDE_DMG = 0.6;   // COMBO_CD：護盾破裂後幾秒重生；WIDE_HEAL：巨艦每擊中我方一次回復的最大血量比例
 // 終焉（第 9 關）：每 FINAL_FORM_T 秒換一種形態，各詞綴的閹割版，沒有「四機同體」
 const FINAL_FORMS = ['combo', 'heavy', 'aegis', 'leech'], FINAL_FORM_T = 18, FINAL_NEED = 4, FINAL_CD = 8, FINAL_HEAVY = 5, FINAL_AEGIS = 1.5, FINAL_HEAL = 0.01;

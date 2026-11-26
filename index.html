@@ -443,11 +443,19 @@ document.addEventListener('keydown', e => { const t = e.target; if (t && (t.tagN
 // ===== 等比例縮放：遊戲以「虛擬世界」(寬 ≥ 540、高 900 為基準) 運作，畫布再等比例放大到實際螢幕 =====
 // ★ 版本號格式：日期＋英文字母，如 20261116a 是當天第一版、20261116b 是第二版（較新）。
 // ★ 不要手動修改！請在專案資料夾執行  node release.js  ，它會自動產生新版本號、同步 sw.js、並更新 version.json（檔案清單與雜湊值）。
-const APP_VERSION = '20261126m', APP_AUTHOR = '郭柏宏';
+const APP_VERSION = '20261127b', APP_AUTHOR = '郭柏宏';
 // 版本更新紀錄（大廳「版本更新紀錄」磚會顯示）。★每次發佈新版本：在最上面加一筆 { v: '版本號', items: [重點條列] }；只顯示最近 5 筆，更舊的會自動被擠掉（CHANGE_KEEP）
 const CHANGE_KEEP = 5;
 const CHANGELOG = [
+    { v: '20261127b', items: [
+        '助力號的增益狀態會和成語效果一樣顯示在畫面左側（含剩餘秒數與效果：攻擊 ×2、爆擊 +10%、血量上限 +10%）；多人闖關也會顯示每位隊員的助力增益。',
+        '雙星挑戰第 23 關（赤核）改版：怒氣累積滿時，Boss 會在螢幕中快速橫衝直撞 15 秒，被碰到的人損失 1/5 最大血量（取代原本的全隊扣 30% 血量）。',
+    ] },
+    { v: '20261127a', items: [
+        '雙星挑戰：隊友復活的位置固定在畫面下方，不會再跑到前方；友情能量集滿所需的攻擊次數調低（羈絆值 100 需 6000 次，最少 1500 次）。',
+    ] },
     { v: '20261126n', items: [
+        '雙星挑戰（第 19～27 關）的 Boss 改用各自專屬的圖片與新名稱：時砂、熔炮、岩燼、雙璧、赤核、銅牙、白鯨、晶棘、蒼瞳，戰鬥中、房間大廳、圖鑑與音樂列表都會顯示新名稱，不再沿用第 1～9 關的 Boss 名。',
         '烈焰號新增「連擊加成」：連續擊中敵機或 Boss，每一發傷害再乘 1.5 倍（第 2 發 ×1.5、第 3 發 ×2.25、第 4 發 ×3.375、第 5 發 ×5.0625），最多累計 5 連擊，之後維持 ×5.0625；兩次命中間隔超過 2 秒就中斷，重新從 ×1 計算。多人闖關中每位玩家各自計算連擊。',
     ] },
     { v: '20261126m', items: [
@@ -498,10 +506,11 @@ const verNewer = (a, b) => VER_RE.test(a) && (!VER_RE.test(b) || a > b);   // a 
 // 戰機各項升級：目前等級 L → L+1 的費用，Lv1 約 160（前期和舊版接近），之後每升一級再 ×1.22（Lv5 約 1,000、Lv10 約 5,000、Lv15 約 20,000）
 const upgradeCost = L => Math.round(80 * (L + 1) * Math.pow(1.22, L - 1) / 10) * 10;
 const XMAX = 3, xCost = n => Math.round(600 * Math.pow(2.4, n) / 10) * 10;   // 銀河幣突破：每項能力最多 +3 級，價格逐級 ×2.4 成指數成長（600／1440／3460）
-const TWIN_HP = 1.5, TWIN_ATK = 1.3, TWIN_BOND = 100, TWIN_FE_MAX = 10000, TWIN_FE_MIN = 2000;   // 雙星關卡：血量／攻擊倍率、進入所需羈絆值、友情能量條所需攻擊次數（羈絆 100＝10000 次，每多 1 點羈絆少 20 次，最少 2000 次）
+const TWIN_HP = 1.5, TWIN_ATK = 1.3, TWIN_BOND = 100, TWIN_FE_MAX = 6000, TWIN_FE_MIN = 1500;   // 雙星關卡：血量／攻擊倍率、進入所需羈絆值、友情能量條所需攻擊次數（羈絆 100＝6000 次，每多 1 點羈絆少 20 次，最少 1500 次）
 const twinNeed = bond => Math.max(TWIN_FE_MIN, Math.min(TWIN_FE_MAX, TWIN_FE_MAX - Math.max(0, (bond | 0) - TWIN_BOND) * 20));
+const TWIN_BOSS_NAMES = { 1:'時砂', 2:'熔炮', 3:'岩燼', 4:'雙璧', 5:'赤核', 6:'銅牙', 7:'白鯨', 8:'晶棘', 9:'蒼瞳' };   // 雙星挑戰 Boss 名稱（依第 19～27 關的 Boss 圖：金色沙漏蛋／熔岩巨砲／黑岩裂隙／紫電雙子艦／赤紅核心／銅球砲塔／白色艦艇／水晶尖刺／藍色多眼艦）
 const TWIN_LET = ['19', '20', '21', '22', '23', '24', '25', '26', '27'];   // 雙星關卡的顯示編號（第 19～27 關）
-const TWIN_RULE = { 1: '19・免疫子彈，只吃成語傷害（每次 1/10 血量）', 2: '20・免疫穿甲號／穿甲彈；堡壘號重擊、對砲彈只受 1 傷害', 3: '21・傷害 < 8000 無效；烈焰號 ×10、暗殺號 ×5（必爆擊），其餘 ×1/5', 4: '22・雙機同體（前後包抄）・共用血條', 5: '23・免疫子彈；擊中累積怒氣，成語傷害 1/10 血量', 6: '24・砲彈越大，傷害與爆擊率越高', 7: '25・射速需達每秒 20 下才有傷害', 8: '26・反彈裝甲：非穿甲攻擊 3% 觸發反擊 20%', 9: '27・隨機分裂／合併、滿場狂奔、定點三連狙擊、彈幕可抵銷我方子彈' };
+const TWIN_RULE = { 1: '19・免疫子彈，只吃成語傷害（每次 1/10 血量）', 2: '20・免疫穿甲號／穿甲彈；堡壘號重擊、對砲彈只受 1 傷害', 3: '21・傷害 < 8000 無效；烈焰號 ×10、暗殺號 ×5（必爆擊），其餘 ×1/5', 4: '22・雙機同體（前後包抄）・共用血條', 5: '23・免疫子彈；怒氣滿時橫衝直撞 15 秒（碰到損失 1/5 血量），成語傷害 1/10 血量', 6: '24・砲彈越大，傷害與爆擊率越高', 7: '25・射速需達每秒 20 下才有傷害', 8: '26・反彈裝甲：非穿甲攻擊 3% 觸發反擊 20%', 9: '27・隨機分裂／合併、滿場狂奔、定點三連狙擊、彈幕可抵銷我方子彈' };
 const COIN_K = 0.02, COOP_ATK = 5, COOP_HP = 5;   // 多人闖關：銀河幣換算係數、小怪與 Boss 的攻擊／血量倍率
 // 軍械商店「全體升級」：依目前等級查表（成語列 1→6、磁吸字塊 0→10、暗物質回收 0→5）
 const SLOT_COST = [150, 500, 1500, 4500, 12000], MAGNET_COST = [300, 900, 2800, 8000, 20000, 50000, 125000, 310000, 780000, 1950000],   // Lv1～5 原價不變；Lv6～10 每級約 ×2.5 往上加
@@ -655,7 +664,7 @@ function bulletImg(color, kind) {   // 回傳 [圖, sx, sy, sw, sh]：優先用�
     const cw = im.width / sh.cols, ch = im.height / sh.rows, r = [im, (i % sh.cols) * cw, Math.floor(i / sh.cols) * ch, cw, ch, BULLET_DIR.has(c)]; _blCache.set(key, r); return r;
 }
 const BOSS_NAMES = { 1:'璃光', 2:'鐵幕', 3:'環星', 4:'金矛', 5:'霜牆', 6:'旋蝕', 7:'紫刃', 8:'赤殼', 9:'裂空' };
-const bossLabel = st => `${BOSS_NAMES[st]}（${BOSS_INFO[BOSS_TYPES[st]].name}）`;   // 例：璃光（玻璃砲）
+const bossLabel = (st, tw) => { if (tw === undefined) tw = typeof G !== 'undefined' && G && !!G.twinMode; return tw ? TWIN_BOSS_NAMES[st] : `${BOSS_NAMES[st]}（${BOSS_INFO[BOSS_TYPES[st]].name}）`; };   // 例：璃光（玻璃砲）
 // 每關 Boss：mv 移動方式、sh 射擊樣式（依序輪替）、r 基礎射擊間隔（秒）
 const BOSS_CFG = {
     1:{ mv:'hover',  sh:['aim'], r:1.6 },                      2:{ mv:'sweep',  sh:['burst'], r:1.5 },
@@ -815,7 +824,7 @@ const trackList = () => [
     { id: 'end', file: MUSIC_FILES.end, name: '結算', sub: '勝利與失敗的結算畫面', grp: '大廳與結算', ico: '🏁' },
     ...[1, 2, 3, 4, 5, 6, 7, 8, 9].map(n => ({ id: 'stage' + n, file: MUSIC_FILES[n], name: `第 ${n} 關`, sub: `Boss：${bossLabel(n)}`, grp: '關卡音樂', ico: '🎮', img: `assets/bg/stage${n}.jpg` })),
     ...[10, 11, 12, 13, 14, 15, 16, 17, 18].map(n => ({ id: 'stage' + n, file: MUSIC_FILES[n], name: `第 ${n} 關`, sub: `多人闖關・Boss：${bossLabel(n - 9)}`, grp: '多人闖關音樂', ico: '👥', img: `assets/bg/stage${n - 9}.jpg` })),
-    ...[19, 20, 21, 22, 23, 24, 25, 26, 27].map(n => ({ id: 'stage' + n, file: MUSIC_FILES[n], name: `第 ${n} 關`, sub: `雙星挑戰・${(TWIN_RULE[n - 18] || '').replace(/^\d+・/, '')}`, grp: '雙星挑戰音樂', ico: '✦', img: `assets/bg/stage${n}.jpg` }))
+    ...[19, 20, 21, 22, 23, 24, 25, 26, 27].map(n => ({ id: 'stage' + n, file: MUSIC_FILES[n], name: `第 ${n} 關`, sub: `雙星挑戰・Boss：${TWIN_BOSS_NAMES[n - 18]}・${(TWIN_RULE[n - 18] || '').replace(/^\d+・/, '')}`, grp: '雙星挑戰音樂', ico: '✦', img: `assets/bg/stage${n}.jpg` }))
 ];
 const jukebox = {
     a: null, i: -1, playing: false, mode: 'all', err: {}, tick: null, tok: 0,
@@ -1557,7 +1566,7 @@ class Game {
         else { ctx.fillStyle = '#fff'; for (let i = 0; i < 70; i++) ctx.fillRect((i * 97) % W, (this.bgClock * (30 + (i % 5) * 18) + i * 53) % H, 2, 2); }
         const sprite = (im, cx, cy, box) => { ctx.save(); ctx.translate(cx, cy); fitDraw(ctx, im, box); ctx.restore(); };
         d.enemies.forEach(e => { const im = IMG[e.type.toLowerCase()]; if (im) { ctx.save(); ctx.shadowBlur = 12; ctx.shadowColor = e.color; sprite(im, e.pos.x, e.pos.y, e.radius * 3.2 * (Math.max(im.width / im.height, im.height / im.width) > 2.2 ? 1.45 : 1)); ctx.restore(); } else { ctx.fillStyle = e.color; ctx.beginPath(); ctx.arc(e.pos.x, e.pos.y, e.radius, 0, 7); ctx.fill(); } });
-        if (d.boss) { const im = IMG['boss_' + d.boss.stage] || IMG.boss; if (im) { ctx.save(); ctx.shadowBlur = 25; ctx.shadowColor = d.boss.color || '#f36'; sprite(im, d.boss.pos.x, d.boss.pos.y, d.boss.size); ctx.restore(); } }
+        if (d.boss) { const im = bossImg(d.boss.stage); if (im) { ctx.save(); ctx.shadowBlur = 25; ctx.shadowColor = d.boss.color || '#f36'; sprite(im, d.boss.pos.x, d.boss.pos.y, d.boss.size); ctx.restore(); } }
         d.bullets.forEach(b => { ctx.fillStyle = b.c; ctx.beginPath(); ctx.arc(b.x, b.y, b.foe ? 4 : (b.big ? 5 : 3), 0, 7); ctx.fill(); });
         const S = d.ship, sim = IMG['ship_' + S.id] || IMG.player;
         ctx.save(); ctx.translate(d.pp.x, d.pp.y); ctx.scale(S.s, S.s);
@@ -1745,7 +1754,7 @@ class Game {
     updateBuffs() {
         if (this.coopMode && window.coop && coop.order && coop.order.length) return coop.paintBuffs();   // 多人闖關：左上角列出全隊的成語效果，並註明是誰發動的
         const L = [['穿甲彈', this.pierceTimer, 30, '#ffb347'], ['追蹤導彈', this.missileTimer, 10, '#ff6b6b'], ['雷射貫穿', this.laserTimer, 3, '#ffea00'],
-                   ['無敵', this.invincibleTimer > 1.05 ? this.invincibleTimer : 0, 10, '#7dffb0'], ['敵彈減速', this.slowTimer, 6, '#9aa8ff'], ['吸血', this.lifestealTimer, LIFESTEAL_T, '#ff5c8a'], ['呼叫友軍', this.allyTimer, 15, '#7ad7ff']];
+                   ['無敵', this.invincibleTimer > 1.05 ? this.invincibleTimer : 0, 10, '#7dffb0'], ['敵彈減速', this.slowTimer, 6, '#9aa8ff'], ['吸血', this.lifestealTimer, LIFESTEAL_T, '#ff5c8a'], ['呼叫友軍', this.allyTimer, 15, '#7ad7ff'], ['助力增益：攻擊×2・爆擊+10%・血量上限+10%', this.aidBuff && this.aidBuff.t > 0 ? this.aidBuff.t : 0, AID_TIME, '#7dffb0']];
         const html = L.filter(x => x[1] > 0).map(([n, t, m, c]) => `<div class="buff" style="--c:${c}">${n} ${Math.ceil(t)}s<i style="width:${Math.min(100, t / m * 100)}%"></i></div>`).join('');
         if (html !== this._buffHtml) { this._buffHtml = html; document.getElementById('buff-bar').innerHTML = html; }
     }
@@ -4477,7 +4486,7 @@ const online = window.online = {
             2: ['免疫穿甲號與穿甲彈。會發出巨大砲彈，堡壘號被砲彈擊中每次只受 1 點傷害。堡壘號的砲彈固定造成 10000～20000 傷害（不爆擊），其他戰機只造成固定 100～200。', '派堡壘號輸出並吸收砲彈；穿甲類攻擊一律無效。', ['bastion']],
             3: ['傷害小於 8000 的攻擊無效。烈焰號傷害 ×10（巨彈必爆擊）、暗殺號傷害 ×5（必定爆擊），其餘戰機傷害變成原來的 1/5。', '烈焰號與暗殺號是主力，其他人負責閃避與撿字卡。', ['blaze', 'assassin']],
             4: ['雙機同體：前後包抄的兩台戰機，共用同一條血條。', '全向火網的環陣號可以同時照顧前後兩個方向。', ['nova']],
-            5: ['免疫子彈，擊中會累積 Boss 怒氣（2000 次命中）；怒氣滿時全隊損失 30% 血量（無敵中不受傷）。每 10 秒放出大量成語塊，成語傷害每次扣 1/10 血量。', '用射速不高、無追蹤的戰機可以少累積怒氣；盡量靠成語輸出。', ['blaze', 'assassin']],
+            5: ['免疫子彈，擊中會累積 Boss 怒氣（2000 次命中）；怒氣滿時 Boss 會在螢幕中快速橫衝直撞 15 秒，被碰到的人損失 1/5 最大血量（碰撞後短暫無敵）。每 10 秒放出大量成語塊，成語傷害每次扣 1/10 血量。', '用射速不高、無追蹤的戰機可以少累積怒氣；Boss 橫衝直撞時專心閃躲，盡量靠成語輸出。', ['blaze', 'assassin']],
             6: ['砲彈越大傷害越高（20～20000），爆擊率也越高。', '烈焰號的巨彈傷害最高。', ['blaze']],
             7: ['射速每秒低於 20 下就無法造成傷害，需要射速 ≥ 20 才有效。', '連射號搭配「射速提升」效果；射速不夠的戰機幾乎無法輸出。', ['storm']],
             8: ['反彈裝甲：每次受到傷害有 3% 機率反擊，我方損失 20% 血量。穿甲彈與穿甲效果成語不會觸發反彈。', '穿甲號最安全；其他戰機搭配穿甲成語。', ['lance']],
@@ -4488,7 +4497,7 @@ const online = window.online = {
         const intro = `<div class="cx-card" style="--c:#ffd700"><div class="pic"><span style="font-size:2.6rem">✦</span></div><div class="inf"><h3>雙星挑戰 Boss<small>限 2 人・第 19～27 關・羈絆值 ${TWIN_BOND}</small></h3><div class="t">Boss 血量 ×${TWIN_HP}、攻擊 ×${TWIN_ATK}（再疊加多人闖關的 ×${COOP_HP}），9 關各有專屬機制。<br><b>友情能量</b>：攻擊敵方會累積能量（羈絆值 ${TWIN_BOND} 需 ${TWIN_FE_MAX} 次，羈絆越高越少，最少 ${TWIN_FE_MIN} 次），集滿釋放震波，清除全場敵彈與敵機，並對 Boss 造成 1/5 血量傷害。掉落的是<b>雙星幣</b>。</div></div></div>`;
         return intro + [1, 2, 3, 4, 5, 6, 7, 8, 9].map(st => { const ty = BOSS_TYPES[st], cfg = BOSS_CFG[st], M = bossMods(9, ty), I = INFO[st], atk = Math.round(M.dmg * COOP_ATK * TWIN_ATK * 10) / 10;
             return `<div class="cx-card boss" style="--c:#ffd700"><div class="pic"><img src="assets/boss_${st + 18}.png" onerror="this.onerror=null;this.src='assets/boss_${st}.png'"></div>
-                <div class="inf"><h3>第 ${st + 18} 關<small>${esc(TWIN_RULE[st].split('・')[1] || '')}</small></h3>
+                <div class="inf"><h3>第 ${st + 18} 關・${TWIN_BOSS_NAMES[st]}<small>${esc(TWIN_RULE[st].split('・')[1] || '')}</small></h3>
                 <div class="chips2"><span>血量 <b>${fmt(hpOf(st, 2))}</b></span><span>攻擊 <b>×${atk}</b></span></div>
                 <div class="t"><b>機制</b> ${I[0]}<br><b>移動</b> ${st === 9 ? '滿場高速狂奔' : MV[cfg.mv]}　<b>攻擊</b> ${cfg.sh.map(x => SH[x]).join('、')}<br><b>對策</b> ${I[1]}<br><b>推薦戰機</b> ${I[2].map(id => { const S = SHIPS.find(x => x.id === id); return `<span style="display:inline-flex;align-items:center;gap:3px;margin-right:8px"><img src="${shipPic(id)}" style="width:22px;height:22px;object-fit:contain" onerror="this.style.display='none'">${S.name}</span>`; }).join('')}</div></div></div>`; }).join('');
     },
@@ -5179,7 +5188,7 @@ const coop = {
             ${M.map((m, i) => `<div class="row"><span>${m.id === d.host ? '★ 房主' : '隊員'}：${esc(m.name)}　${this.shipName(m.sid)}</span><b style="color:${m.ready ? '#38ef7d' : '#9ab'}">${m.ready ? '已準備' : '未準備'}</b></div>`).join('')}
             ${M.length < (d.twin ? 2 : 3) ? `<div class="row"><span style="color:#9ab">等待隊員加入…</span></div>` : ''}
             ${(() => { const peer = M.find(m => m.id !== me), pts = peer ? online.bondPts(peer.id) : 0, ok = pts >= TWIN_BOND; return `<div style="border:1px solid ${d.twin ? '#ffd700' : '#334'};border-radius:10px;padding:8px 10px;margin:8px 0;text-align:left"><b style="color:#ffd700">✦ 雙星關卡（9 關・限 2 人）</b><div class="muted" style="font-size:.82rem;line-height:1.5">雙方羈絆值需滿 ${TWIN_BOND}。第 19～27 關各有專屬機制；攻擊敵人會累積「友情能量」，集滿釋放震波（消除全場敵彈與敵機、對 Boss 造成 1/5 血量傷害），羈絆值越高所需攻擊數越少（${TWIN_FE_MAX}～${TWIN_FE_MIN} 次）。Boss 血量 ×${TWIN_HP}、攻擊 ×${TWIN_ATK}。掉落的是<b>雙星幣</b>。你的雙星幣：<b style="color:#ffd700">${Number(G.twinCoins | 0).toLocaleString()}</b></div>${peer ? `<div style="margin-top:4px">與 ${esc(peer.name)} 的羈絆：<b style="color:${ok ? '#38ef7d' : '#ff9a9a'}">⭐ ${pts}/${TWIN_BOND}</b>${ok ? '' : '（未滿，無法進入）'}</div>` : '<div class="muted" style="margin-top:4px">等待好友加入後才能切換</div>'}${host && d.state === 'lobby' ? `<button class="sm" style="margin-top:6px" onclick="coop.setTwin(${d.twin ? 'false' : 'true'})">${d.twin ? '改回一般闖關' : '切換為雙星關卡'}</button>` : (d.twin ? '<div style="color:#ffd700;margin-top:4px">★ 本房為雙星關卡</div>' : '')}</div>`; })()}
-            ${(() => { const open = this.roomOpen(d), cs = this.roomStage(d); return `<h4>起始關卡</h4><div style="display:flex;gap:8px;align-items:center">${host && d.state === 'lobby' ? '<button class="sm" onclick="coop.stepStage(-1)">◀</button>' : ''}<b style="color:var(--neon-gold)">第 ${coopShow(cs)} 關</b>${host && d.state === 'lobby' ? '<button class="sm" onclick="coop.stepStage(1)">▶</button>' : ''}<small class="muted">${d.twin ? esc(TWIN_RULE[cs]) : 'Boss：' + bossLabel(cs)}${host ? '' : '（由房主選擇）'}</small></div><small class="muted" style="display:block;line-height:1.5">可選：${open.map(coopShow).join('、')}。以房主（隊長）的通關紀錄為主，隊員通關過的關卡也會解鎖；跟著隊長跳關通關，只會記錄你實際破的那一關，被跳過的關卡不會解鎖。</small>`; })()}
+            ${(() => { const open = this.roomOpen(d), cs = this.roomStage(d); return `<h4>起始關卡</h4><div style="display:flex;gap:8px;align-items:center">${host && d.state === 'lobby' ? '<button class="sm" onclick="coop.stepStage(-1)">◀</button>' : ''}<b style="color:var(--neon-gold)">第 ${coopShow(cs)} 關</b>${host && d.state === 'lobby' ? '<button class="sm" onclick="coop.stepStage(1)">▶</button>' : ''}${d.twin ? `<img src="assets/boss_${cs + 18}.png" style="width:34px;height:34px;object-fit:contain" onerror="this.style.display='none'">` : ''}<small class="muted">${d.twin ? 'Boss：' + esc(TWIN_BOSS_NAMES[cs]) + '・' + esc(TWIN_RULE[cs]) : 'Boss：' + bossLabel(cs, false)}${host ? '' : '（由房主選擇）'}</small></div><small class="muted" style="display:block;line-height:1.5">可選：${open.map(coopShow).join('、')}。以房主（隊長）的通關紀錄為主，隊員通關過的關卡也會解鎖；跟著隊長跳關通關，只會記錄你實際破的那一關，被跳過的關卡不會解鎖。</small>`; })()}
             <h4>選擇戰機（含銀河幣突破的等級）</h4><div>${owned.map(S => `<button class="chip ${G.shipId === S.id ? 'on' : ''}" onclick="coop.setShip('${S.id}')">${S.name}</button>`).join('')}</div>
             <div style="display:flex;gap:8px;margin-top:10px">${host ? '' : `<button class="btn ${mine.ready ? '' : 'btn-start'}" onclick="coop.ready()">${mine.ready ? '取消準備' : '準備'}</button>`}
             ${host ? `<button class="btn btn-start" ${canStart ? '' : 'disabled'} onclick="coop.start()">${M.length < 2 ? '需要至少 2 人' : '出擊'}</button>` : ''}</div>
@@ -5241,7 +5250,7 @@ const coop = {
     },
     revive(id, idiom) {   // 倒下的隊員用補血成語（如起死回生）原地重生：回復補血成語的血量，並無敵 5 秒
         const P = this.P[id]; if (!P || P.alive || P.left) return;
-        const x = Math.max(40, Math.min(WORLD.w - 40, P.dx === undefined ? WORLD.w / 2 : P.dx)), y = Math.max(60, Math.min(WORLD.h - 40, P.dy === undefined ? WORLD.h - 150 : P.dy));
+        const x = Math.max(40, Math.min(WORLD.w - 40, P.dx === undefined ? WORLD.w / 2 : P.dx)), y = G.twinMode ? WORLD.h - 150 : Math.max(60, Math.min(WORLD.h - 40, P.dy === undefined ? WORLD.h - 150 : P.dy));   // 雙星模式：一律在畫面下方復活
         P.alive = true; if (!P.host && !this.local) { P.in = { x, y }; P.at = performance.now(); }
         this.ctx(id, () => { G.player.pos.x = x; G.player.pos.y = y; G.hp = 0; G.shield = 0; G.allies = []; G.laserTimer = 0; G.applyIdiom(idiom); G.invincibleTimer = 5; });
         G.showFloatText(`${P.name} ${idiom.word}！原地復活・無敵 5 秒`, WORLD.w / 2, WORLD.h * 0.5, '#7dffb0');
@@ -5251,7 +5260,7 @@ const coop = {
         const down = this.downIds(cid), full = down.length === 1;
         this.ctx(cid, () => { sfx.playIdiomFire('ALLY'); G.showFloatText(`發動！${idiom.word}！友軍救援`, G.player.pos.x, G.player.pos.y - 40, '#ffea00'); });
         down.forEach(id => {
-            const P = this.P[id], x = Math.max(40, Math.min(WORLD.w - 40, P.dx === undefined ? WORLD.w / 2 : P.dx)), y = Math.max(60, Math.min(WORLD.h - 40, P.dy === undefined ? WORLD.h - 150 : P.dy));
+            const P = this.P[id], x = Math.max(40, Math.min(WORLD.w - 40, P.dx === undefined ? WORLD.w / 2 : P.dx)), y = G.twinMode ? WORLD.h - 150 : Math.max(60, Math.min(WORLD.h - 40, P.dy === undefined ? WORLD.h - 150 : P.dy));   // 雙星模式：一律在畫面下方復活
             P.alive = true; if (!P.host && !this.local) { P.in = { x, y }; P.at = performance.now(); }
             this.ctx(id, () => { G.player.pos.x = x; G.player.pos.y = y; G.hp = G.maxHp * (full ? 1 : 0.5); G.shield = 0; G.allies = []; G.laserTimer = 0; G.invincibleTimer = 3; });
             G.showFloatText(`${P.name} 被友軍救回（${full ? '滿血' : '半血'}）`, WORLD.w / 2, WORLD.h * (0.5 + 0.05 * down.indexOf(id)), '#7dffb0');
@@ -5297,6 +5306,7 @@ const coop = {
         if (g.twinMode) {   // 雙星關卡：記下是 A～I 哪一關；I 關的 Boss 改成滿場狂奔
             b.tw = g.currentStage; b.rage = 0; b.marks = [];
             if (b.tw === 9) b.move = function (dt, W) { if (this.freeze) return; roamStep(this, dt, W, WORLD.h, 520); };
+            if (b.tw === 5) { const m0 = b.move; b.move = function (dt, W, pp) { if (this.dashT > 0) { roamStep(this, dt, W, WORLD.h, 600); return; } return m0.call(this, dt, W, pp); }; }   // 23 關：怒氣滿時橫衝直撞
         }
         g.boss = b; document.getElementById('boss-bar').style.display = 'block'; sfx.playReady();
         if (g.twinMode) g.showFloatText(TWIN_RULE[g.currentStage] || '', WORLD.w / 2, WORLD.h * 0.56, '#ffd700'); else if (b.aff) g.showFloatText(this.affixText(b), WORLD.w / 2, WORLD.h * 0.56, AFFIX_COL[b.aff]);
@@ -5557,7 +5567,7 @@ const coop = {
         const P = this.P[owner], S0 = P ? (P.host ? G : P.s) : null, rnd = (a, c) => a + Math.random() * (c - a);
         const isPierce = () => !!(pf || (src && src.pierce) || (S0 && S0.pierceTimer > 0));
         if (st === 1 || st === 5) {   // A、E：免疫一切傷害（只吃成語衝擊）；E 擊中會累積怒氣
-            if (st === 5 && hit && src && src.isPlayer) { b.rage = (b.rage || 0) + 1; if (b.rage >= 2000) { b.rage = 0; this.rageBlast(); } }
+            if (st === 5 && hit && src && src.isPlayer && !(b.dashT > 0)) { b.rage = (b.rage || 0) + 1; if (b.rage >= 2000) { b.rage = 2000; b.dashT = 15; b.dashHit = {}; b.rt = null; G.showFloatText('BOSS 暴怒！橫衝直撞 15 秒', WORLD.w / 2, WORLD.h * 0.45, '#ff3344'); } }
             return false;
         }
         if (st === 2) {   // B：免疫穿甲；堡壘號固定重擊，其餘固定小傷
@@ -5585,11 +5595,6 @@ const coop = {
         }
         return n;
     },
-    rageBlast() {   // E：怒氣滿，全隊損失 30% 血量（無敵中不受傷）
-        G.showFloatText('BOSS 暴怒！', WORLD.w / 2, WORLD.h * 0.45, '#ff3344');
-        this.aliveIds().forEach(id => this.ctx(id, () => { if (G.invincibleTimer <= 0) { this.dmgP(id, G.maxHp * 0.3); G.invincibleTimer = 0.5; } }));
-        this.wave(G.boss ? G.boss.pos.x : WORLD.w / 2, G.boss ? G.boss.pos.y : 120, 700, 0.9);
-    },
     twinCast(id) {   // A、E：成語發動 → Boss 損失 1/10 血量（不論成語）
         const b = G.boss; if (!b || b.hp <= 0) return; this._twPass = true; try { G.dmgEnt(b, b.maxHp * 0.1, false, false, { owner: id }); } finally { this._twPass = false; }
         G.showFloatText('成語衝擊！-10%', b.pos.x, b.pos.y + 90, '#ffd700');
@@ -5599,6 +5604,11 @@ const coop = {
         if (st === 2 && b.pos.y > 0) {   // B：巨大砲彈
             b.cannonT = (b.cannonT === undefined ? 2.5 : b.cannonT) - dt;
             if (b.cannonT <= 0) { b.cannonT = 3.2; const al = this.aliveIds(); if (al.length) { const t = this.posOf(al[Math.floor(Math.random() * al.length)]), x = g.bullets.get(); x.pos = new Vec2(b.pos.x, b.pos.y + b.radius * 0.6); const dx = t.x - x.pos.x, dy = t.y - x.pos.y, d = Math.hypot(dx, dy) || 1; x.vel = new Vec2(dx / d * 240, dy / d * 240); x.radius = 34; x.damage = b.dmgMul * 2; x.isPlayer = false; x.fromBoss = true; x.cannon = true; x.sid = null; x.color = '#ff8a00'; g.showFloatText('巨大砲彈！', b.pos.x, b.pos.y + 90, '#ff8a00'); } }
+        }
+        if (st === 5 && b.dashT > 0) {   // E：怒氣滿 → 橫衝直撞 15 秒；碰到的人損失 1/5 最大血量（每次碰撞後 1 秒內不重複受傷）
+            b.dashT -= dt; b.rage = Math.max(0, Math.round(2000 * b.dashT / 15));
+            this.aliveIds().forEach(id => { const p = this.posOf(id); if (Math.hypot(p.x - b.pos.x, p.y - b.pos.y) < b.radius * 1.3 + 14) this.ctx(id, () => { if (G.invincibleTimer <= 0 && G.hp > 0) { this.dmgP(id, G.maxHp * 0.2); G.invincibleTimer = 1; G.showFloatText('被撞！-20%', p.x, p.y - 40, '#ff4d6d'); } }); });
+            if (b.dashT <= 0) { b.dashT = 0; b.rage = 0; b.vx = 0; b.vy = 0; b.rt = null; g.showFloatText('Boss 冷靜下來了', W / 2, H * 0.45, '#7dff9a'); }
         }
         if (st === 5 && b.pos.y > 0) {   // E：每 10 秒放出大量成語塊
             b.blkT = (b.blkT === undefined ? 4 : b.blkT) - dt;
@@ -5760,7 +5770,7 @@ const coop = {
                 const wasDead = this.view[me] && this.view[me].alive === 0;   // 倒下→復活：把自己的戰機對齊主控端算好的復活位置
                 g.hp = a[3]; g.maxHp = a[4]; g.shield = a[5]; g.invincibleTimer = a[6]; g.laserTimer = a[7] ? 1 : 0; g.pierceTimer = a[10]; g.missileTimer = a[11]; g.lifestealTimer = a[13] || 0; g.snipe = a[14] && a[9] ? this.decSn(a[14]) : { c: 0, t: [], fx: [] }; g.aidE = a[15] ? a[15][0] : 0; g.aidBuff = a[15] && a[15][1] > 0 ? { t: a[15][1], bonus: 0 } : null;
                 if (wasDead && a[9]) g.player.pos = new Vec2(a[1], a[2]);
-                this.view[me] = { alive: a[9], hp: a[3], maxHp: a[4], shield: a[5], inv: a[6], laser: a[7], pierce: a[10], missile: a[11], ally: a[12] || 0, lifesteal: a[13] || 0 };
+                this.view[me] = { alive: a[9], hp: a[3], maxHp: a[4], shield: a[5], inv: a[6], laser: a[7], pierce: a[10], missile: a[11], ally: a[12] || 0, lifesteal: a[13] || 0, ab: a[15] ? a[15][1] : 0 };
                 if (S.rs !== this.rsSeen) { this.rsSeen = S.rs; if (a[9]) g.player.pos = new Vec2(a[1], a[2]); this.inX = -1; this.inSent = 0; }   // 新關卡：站到房主排好的起點（畫面最下方），並立刻回報新位置
             } else {
                 let o = this.view[id]; if (!o) o = this.view[id] = { x: a[1], y: a[2] };
@@ -5858,10 +5868,10 @@ const coop = {
     },
     paintBuffs() {   // 左上角：全隊的成語效果，每一條都註明是誰發動的（效果落在發動者身上；減速為全場效果）
         const g = G, me = this.me(), host = G.coopHost, rows = [];
-        const T = [['穿甲彈', 'pierce', 30, '#ffb347'], ['追蹤導彈', 'missile', 10, '#ff6b6b'], ['雷射貫穿', 'laser', 3, '#ffea00'], ['無敵', 'inv', 10, '#7dffb0'], ['吸血', 'lifesteal', LIFESTEAL_T, '#ff5c8a'], ['呼叫友軍', 'ally', 15, '#7ad7ff']];
+        const T = [['穿甲彈', 'pierce', 30, '#ffb347'], ['追蹤導彈', 'missile', 10, '#ff6b6b'], ['雷射貫穿', 'laser', 3, '#ffea00'], ['無敵', 'inv', 10, '#7dffb0'], ['吸血', 'lifesteal', LIFESTEAL_T, '#ff5c8a'], ['呼叫友軍', 'ally', 15, '#7ad7ff'], ['助力增益：攻擊×2・爆擊+10%・血量上限+10%', 'ab', AID_TIME, '#7dffb0']];
         this.order.forEach((id, idx) => {
             let v;
-            if (host) { const P = this.P[id]; if (!P || P.left || !P.alive) return; const s = P.host ? g : P.s; v = { pierce: s.pierceTimer, missile: s.missileTimer, laser: s.laserTimer, inv: s.invincibleTimer, ally: s.allyTimer, lifesteal: s.lifestealTimer }; }
+            if (host) { const P = this.P[id]; if (!P || P.left || !P.alive) return; const s = P.host ? g : P.s; v = { pierce: s.pierceTimer, missile: s.missileTimer, laser: s.laserTimer, inv: s.invincibleTimer, ally: s.allyTimer, lifesteal: s.lifestealTimer, ab: s.aidBuff && s.aidBuff.t > 0 ? s.aidBuff.t : 0 }; }
             else { v = this.view[id]; if (!v || v.alive === 0) return; }
             const pc = this.local ? (LC_COL[idx] || '#9ff') : (id === me ? '#ffea00' : '#9ff');
             T.forEach(([n, k, m, c]) => { let t = +v[k] || 0; if (k === 'inv' && t <= 1.05) t = 0; if (t > 0) rows.push([this.nm[id] || '', pc, n, t, m, c]); });
@@ -6176,7 +6186,7 @@ const lcoop = window.lcoop = {
         ui(`<div class="menu-overlay" style="width:min(96vw,580px);max-height:94vh;overflow:auto"><h2 class="shop-title">${this.twin ? '✦ 同機雙人・雙星挑戰' : '同機多人闖關'}</h2>${this.twin ? `<p class="muted" style="text-align:left;line-height:1.6;margin:4px 0">雙星挑戰（第 19～27 關）限 2 人：<b>兩位玩家都要登入帳號，且雙方羈絆值需滿 ${TWIN_BOND}</b>。結算的雙星幣會寫入各自的帳號。${online.free ? '<br><b style="color:#ff9aa8">單機離線模式不能進行雙星挑戰。</b>' : ''}</p>` : ''}
             <p class="muted" style="line-height:1.6;text-align:left">2～3 人共用這個鍵盤協力闖關（難度比一般第 9 關更難）。<b>玩家 1 是主控端</b>（原本登入的帳號）；連線後可再登入另外 1～2 位玩家，用他們自己的戰機與裝備，沒登入的是訪客（不領獎勵）。<br>同機模式每位玩家用「切換」鍵選成語、「使用」鍵發動（不使用數字快捷鍵）；任何玩家發動成語時，<b>所有玩家暫停 5 秒</b>，等成語顯示完畢才發動。Boss 另有專屬能力（連擊護盾／重擊護甲／破甲彈／四機同體／巨艦），需要不同戰機分工。戰鬥中<b>完全不連線</b>，結束時依貢獻度把銀河幣一次寫入各登入帳號。<b>要用銀河幣突破升級，須以該帳號當主控端登入，到「戰機管理」進行。</b>${online.free ? '<br>單機離線模式：全部是訪客，不能登入、不累積任何貨幣。' : ''}</p>
             ${rows.join('')}
-            ${(() => { const cs = this.stageSel(), open = this.openStages(); return `<div style="text-align:left;border:1px solid #334;border-radius:8px;padding:8px 10px;margin:8px 0"><div style="display:flex;gap:8px;align-items:center"><span style="color:var(--neon-gold)">起始關卡</span><button class="sm" onclick="lcoop.stepStage(-1)">◀</button><b style="color:var(--neon-gold)">第 ${coopShow(cs)} 關</b><button class="sm" onclick="lcoop.stepStage(1)">▶</button><small class="muted">Boss：${bossLabel(cs)}</small></div><small class="muted" style="display:block;line-height:1.5;margin-top:4px">${online.free ? '單機離線模式：全部關卡開放。' : `可選：${open.map(coopShow).join('、')}。以玩家 1（隊長）的通關紀錄為主，其他已登入玩家通關過的關卡也會解鎖；跟著隊長跳關通關，只會記錄實際破的那一關，被跳過的關卡不會解鎖。`}</small></div>`; })()}
+            ${(() => { const cs = this.stageSel(), open = this.openStages(); return `<div style="text-align:left;border:1px solid #334;border-radius:8px;padding:8px 10px;margin:8px 0"><div style="display:flex;gap:8px;align-items:center"><span style="color:var(--neon-gold)">起始關卡</span><button class="sm" onclick="lcoop.stepStage(-1)">◀</button><b style="color:var(--neon-gold)">第 ${coopShow(cs)} 關</b><button class="sm" onclick="lcoop.stepStage(1)">▶</button>${this.twin ? `<img src="assets/boss_${cs + 18}.png" style="width:34px;height:34px;object-fit:contain" onerror="this.style.display='none'">` : ''}<small class="muted">Boss：${bossLabel(cs, !!this.twin)}</small></div><small class="muted" style="display:block;line-height:1.5;margin-top:4px">${online.free ? '單機離線模式：全部關卡開放。' : `可選：${open.map(coopShow).join('、')}。以玩家 1（隊長）的通關紀錄為主，其他已登入玩家通關過的關卡也會解鎖；跟著隊長跳關通關，只會記錄實際破的那一關，被跳過的關卡不會解鎖。`}</small></div>`; })()}
             <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">${this.twin ? '' : this.n < 3 ? '<button class="btn" onclick="lcoop.addP()">＋ 加入玩家 3</button>' : '<button class="btn" onclick="lcoop.delP()">－ 移除玩家 3</button>'}<button class="btn btn-start" ${this.needMore() ? 'disabled' : ''} onclick="lcoop.start()">出擊</button></div>
             ${this.needMore() ? `<div class="muted" style="color:#ff9aa8;margin-top:6px">${this.twin ? '雙星挑戰需要 2 位玩家都登入帳號' : '連線模式至少需要 2 位玩家登入帳號才能出擊（訪客不計）'}：請在其他玩家欄位按「登入帳號」。</div>` : ''}
             <small class="muted" style="display:block;margin-top:6px">成語列上會用各玩家的顏色框出「目前選中」的成語（P1 黃、P2 綠、P3 粉），切換後按使用鍵發動。玩家 3 需要數字鍵盤。三人同時按鍵時部分鍵盤會有按鍵衝突，可改用外接鍵盤。</small>

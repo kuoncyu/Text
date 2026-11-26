@@ -443,10 +443,16 @@ document.addEventListener('keydown', e => { const t = e.target; if (t && (t.tagN
 // ===== 等比例縮放：遊戲以「虛擬世界」(寬 ≥ 540、高 900 為基準) 運作，畫布再等比例放大到實際螢幕 =====
 // ★ 版本號格式：日期＋英文字母，如 20261116a 是當天第一版、20261116b 是第二版（較新）。
 // ★ 不要手動修改！請在專案資料夾執行  node release.js  ，它會自動產生新版本號、同步 sw.js、並更新 version.json（檔案清單與雜湊值）。
-const APP_VERSION = '20261126k', APP_AUTHOR = '郭柏宏';
+const APP_VERSION = '20261126m', APP_AUTHOR = '郭柏宏';
 // 版本更新紀錄（大廳「版本更新紀錄」磚會顯示）。★每次發佈新版本：在最上面加一筆 { v: '版本號', items: [重點條列] }；只顯示最近 5 筆，更舊的會自動被擠掉（CHANGE_KEEP）
 const CHANGE_KEEP = 5;
 const CHANGELOG = [
+    { v: '20261126m', items: [
+        '移除雙星挑戰說明裡「雙星幣商店之後開放」的字句（雙星幣現在已可在軍械商店購買助力號）。',
+    ] },
+    { v: '20261126l', items: [
+        '修正連線多人闖關「打完回到房間再繼續挑戰」時，隊友有時會突然跳出戰場的問題（上一場殘留的結算畫面被誤當成這一場的結算）。',
+    ] },
     { v: '20261126k', items: [
         '雙星挑戰第 21 關平衡調整：烈焰號傷害提高為 ×10；暗殺號傷害 ×5 且必定爆擊；其餘戰機維持原本的 1/5。',
     ] },
@@ -3607,7 +3613,7 @@ const online = window.online = {
     renderTwin() {   // 大廳「雙星挑戰」：同機雙人、連線闖關兩個子功能磚
         const T = (a, b, h, sm, ico, onclick) => `<div class="tile w2" style="--a:${a};--b:${b}" onclick="${onclick}"><h4>${h}</h4><small>${sm}</small><span class="ico">${ico}</span></div>`;
         ui(`<div class="menu-overlay" style="width:min(94vw,580px)"><h2 class="shop-title" style="color:#ffd700">✦ 雙星挑戰（第 19～27 關）</h2>
-            <p class="muted" style="line-height:1.6;text-align:left">限 <b>2 人</b>，兩人的<b>羈絆值需滿 ${TWIN_BOND}</b>（和好友聊天、一起闖關會累積）。9 關各有專屬 Boss 機制；攻擊會累積「友情能量」，集滿釋放震波。掉落的是<b>雙星幣</b>（商店之後開放）。你的雙星幣：<b style="color:#ffd700">${Number(G.twinCoins | 0).toLocaleString()}</b><br>・<b>同機雙人</b>：兩人同一個鍵盤，雙方都要登入帳號。<br>・<b>連線闖關</b>：兩人遠端連線，由房主建立房間。</p>
+            <p class="muted" style="line-height:1.6;text-align:left">限 <b>2 人</b>，兩人的<b>羈絆值需滿 ${TWIN_BOND}</b>（和好友聊天、一起闖關會累積）。9 關各有專屬 Boss 機制；攻擊會累積「友情能量」，集滿釋放震波。掉落的是<b>雙星幣</b>。你的雙星幣：<b style="color:#ffd700">${Number(G.twinCoins | 0).toLocaleString()}</b><br>・<b>同機雙人</b>：兩人同一個鍵盤，雙方都要登入帳號。<br>・<b>連線闖關</b>：兩人遠端連線，由房主建立房間。</p>
             <div class="tiles" style="grid-template-columns:repeat(2,1fr)">${T('#f7b733', '#fc4a1a', '同機雙人', '同鍵盤・各自登入帳號', '✦', "coop.viaNet = false; coop.twinEntry = false; lcoop.twin = true; game.setState('COOP')")}${T('#ff512f', '#dd2476', '連線闖關', '遠端 2 人・房主建房', '✦', "coop.viaNet = true; coop.twinEntry = true; lcoop.twin = false; game.setState('COOP')")}</div>${BACK}</div>`);
     },
     extraTiles() {
@@ -5161,7 +5167,7 @@ const coop = {
             ${d.state === 'ended' ? '<p style="color:#ffd700">上一場已結束，等待房主重新開房…</p>' : ''}
             ${M.map((m, i) => `<div class="row"><span>${m.id === d.host ? '★ 房主' : '隊員'}：${esc(m.name)}　${this.shipName(m.sid)}</span><b style="color:${m.ready ? '#38ef7d' : '#9ab'}">${m.ready ? '已準備' : '未準備'}</b></div>`).join('')}
             ${M.length < (d.twin ? 2 : 3) ? `<div class="row"><span style="color:#9ab">等待隊員加入…</span></div>` : ''}
-            ${(() => { const peer = M.find(m => m.id !== me), pts = peer ? online.bondPts(peer.id) : 0, ok = pts >= TWIN_BOND; return `<div style="border:1px solid ${d.twin ? '#ffd700' : '#334'};border-radius:10px;padding:8px 10px;margin:8px 0;text-align:left"><b style="color:#ffd700">✦ 雙星關卡（9 關・限 2 人）</b><div class="muted" style="font-size:.82rem;line-height:1.5">雙方羈絆值需滿 ${TWIN_BOND}。第 19～27 關各有專屬機制；攻擊敵人會累積「友情能量」，集滿釋放震波（消除全場敵彈與敵機、對 Boss 造成 1/5 血量傷害），羈絆值越高所需攻擊數越少（${TWIN_FE_MAX}～${TWIN_FE_MIN} 次）。Boss 血量 ×${TWIN_HP}、攻擊 ×${TWIN_ATK}。掉落的是<b>雙星幣</b>（商店之後開放）。你的雙星幣：<b style="color:#ffd700">${Number(G.twinCoins | 0).toLocaleString()}</b></div>${peer ? `<div style="margin-top:4px">與 ${esc(peer.name)} 的羈絆：<b style="color:${ok ? '#38ef7d' : '#ff9a9a'}">⭐ ${pts}/${TWIN_BOND}</b>${ok ? '' : '（未滿，無法進入）'}</div>` : '<div class="muted" style="margin-top:4px">等待好友加入後才能切換</div>'}${host && d.state === 'lobby' ? `<button class="sm" style="margin-top:6px" onclick="coop.setTwin(${d.twin ? 'false' : 'true'})">${d.twin ? '改回一般闖關' : '切換為雙星關卡'}</button>` : (d.twin ? '<div style="color:#ffd700;margin-top:4px">★ 本房為雙星關卡</div>' : '')}</div>`; })()}
+            ${(() => { const peer = M.find(m => m.id !== me), pts = peer ? online.bondPts(peer.id) : 0, ok = pts >= TWIN_BOND; return `<div style="border:1px solid ${d.twin ? '#ffd700' : '#334'};border-radius:10px;padding:8px 10px;margin:8px 0;text-align:left"><b style="color:#ffd700">✦ 雙星關卡（9 關・限 2 人）</b><div class="muted" style="font-size:.82rem;line-height:1.5">雙方羈絆值需滿 ${TWIN_BOND}。第 19～27 關各有專屬機制；攻擊敵人會累積「友情能量」，集滿釋放震波（消除全場敵彈與敵機、對 Boss 造成 1/5 血量傷害），羈絆值越高所需攻擊數越少（${TWIN_FE_MAX}～${TWIN_FE_MIN} 次）。Boss 血量 ×${TWIN_HP}、攻擊 ×${TWIN_ATK}。掉落的是<b>雙星幣</b>。你的雙星幣：<b style="color:#ffd700">${Number(G.twinCoins | 0).toLocaleString()}</b></div>${peer ? `<div style="margin-top:4px">與 ${esc(peer.name)} 的羈絆：<b style="color:${ok ? '#38ef7d' : '#ff9a9a'}">⭐ ${pts}/${TWIN_BOND}</b>${ok ? '' : '（未滿，無法進入）'}</div>` : '<div class="muted" style="margin-top:4px">等待好友加入後才能切換</div>'}${host && d.state === 'lobby' ? `<button class="sm" style="margin-top:6px" onclick="coop.setTwin(${d.twin ? 'false' : 'true'})">${d.twin ? '改回一般闖關' : '切換為雙星關卡'}</button>` : (d.twin ? '<div style="color:#ffd700;margin-top:4px">★ 本房為雙星關卡</div>' : '')}</div>`; })()}
             ${(() => { const open = this.roomOpen(d), cs = this.roomStage(d); return `<h4>起始關卡</h4><div style="display:flex;gap:8px;align-items:center">${host && d.state === 'lobby' ? '<button class="sm" onclick="coop.stepStage(-1)">◀</button>' : ''}<b style="color:var(--neon-gold)">第 ${coopShow(cs)} 關</b>${host && d.state === 'lobby' ? '<button class="sm" onclick="coop.stepStage(1)">▶</button>' : ''}<small class="muted">${d.twin ? esc(TWIN_RULE[cs]) : 'Boss：' + bossLabel(cs)}${host ? '' : '（由房主選擇）'}</small></div><small class="muted" style="display:block;line-height:1.5">可選：${open.map(coopShow).join('、')}。以房主（隊長）的通關紀錄為主，隊員通關過的關卡也會解鎖；跟著隊長跳關通關，只會記錄你實際破的那一關，被跳過的關卡不會解鎖。</small>`; })()}
             <h4>選擇戰機（含銀河幣突破的等級）</h4><div>${owned.map(S => `<button class="chip ${G.shipId === S.id ? 'on' : ''}" onclick="coop.setShip('${S.id}')">${S.name}</button>`).join('')}</div>
             <div style="display:flex;gap:8px;margin-top:10px">${host ? '' : `<button class="btn ${mine.ready ? '' : 'btn-start'}" onclick="coop.ready()">${mine.ready ? '取消準備' : '準備'}</button>`}
@@ -5194,6 +5200,7 @@ const coop = {
             this.order.forEach(id => { const m = mem[id], P = { uid: id, name: m.name, host: id === me, alive: true, left: false, in: null, at: performance.now() }; if (!P.host) P.s = this.freshState(m.st); this.P[id] = P; });
             G.fillEmptySlots();
             G.bullets.get = function () { const o = ObjectPool.prototype.get.call(this); o.owner = coop.cur; return o; };   // 每顆子彈記下是誰發射的（傷害要算在誰頭上）
+            try { ref.collection('pos').doc('world').delete().catch(() => {}); } catch (e) {}   // 清掉上一場殘留的舊畫面／舊結算
             this.unsubIn = ref.collection('pos').onSnapshot(s => s.docChanges().forEach(ch => {
                 const id = ch.doc.id; if (id === 'world' || ch.type === 'removed') return; const p = this.P[id], x = ch.doc.data();
                 if (p && x && x.mid === this.mid) { p.at = performance.now(); if (x.rs === undefined || x.rs === this.resetSeq) p.in = { x: x.x, y: x.y }; }
@@ -5666,7 +5673,7 @@ const coop = {
         if (!this.room) return;
         const g = G, ids = this.order, ri = x => Math.round(x), r1 = x => Math.round(x * 10) / 10, pal = [], pi = c => { let i = pal.indexOf(c); if (i < 0) { pal.push(c); i = pal.length - 1; } return i; };
         const src = id => this.P[id].host ? g : this.P[id].s;
-        const S = { q: ++this.seq, W: ri(WORLD.w), H: ri(WORLD.h), gs: g.gameState, st: g.currentStage, sb: g.currentSub, ct: r1(g.clearT || 0), cn: g.clearNext ? 1 : 0, nx: g.isNextStage ? 1 : 0, rs: this.resetSeq, pool: ri(this.pool), ms: g.maxSlots, sw: g.slowTimer > 0 ? Math.max(0.1, r1(g.slowTimer)) : 0, sn: g.slowTimer > 0 ? (this.slowBy || '') : '' };
+        const S = { q: ++this.seq, mid: this.mid, W: ri(WORLD.w), H: ri(WORLD.h), gs: g.gameState, st: g.currentStage, sb: g.currentSub, ct: r1(g.clearT || 0), cn: g.clearNext ? 1 : 0, nx: g.isNextStage ? 1 : 0, rs: this.resetSeq, pool: ri(this.pool), ms: g.maxSlots, sw: g.slowTimer > 0 ? Math.max(0.1, r1(g.slowTimer)) : 0, sn: g.slowTimer > 0 ? (this.slowBy || '') : '' };
         S.sl = g.slots.map(s => [s.type === 'READY' ? 1 : 0, s.word, s.chars.join(''), s.effect, s.effectDesc]);
         S.P = ids.map(id => { const P = this.P[id], s = src(id), pos = P.host ? g.player.pos : s.player.pos; return [id, ri(pos.x), ri(pos.y), r1(s.hp), ri(s.maxHp), r1(s.shield), r1(Math.max(0, s.invincibleTimer)), s.laserTimer > 0 ? Math.max(0.1, r1(s.laserTimer)) : 0, s.skin, P.alive ? 1 : 0, r1(Math.max(0, s.pierceTimer)), r1(Math.max(0, s.missileTimer)), r1(Math.max(0, s.allyTimer || 0)), r1(Math.max(0, s.lifestealTimer || 0)), (P.alive && s.snipe && SKINS[s.skin] && SKINS[s.skin].pat === 'snipe') ? [Math.round(s.snipe.c * 100) / 100, (s.snipe.t || []).map(t => [ri(t.o.pos.x), ri(t.o.pos.y), ri(t.o.radius || 30)]), (s.snipe.fx || []).map(f => [ri(f.x1), ri(f.y1), ri(f.x2), ri(f.y2), Math.round(f.t * 100) / 100])] : 0, [s.aidE | 0, s.aidBuff ? r1(s.aidBuff.t) : 0]]; });
         S.E = g.enemies.map(e => { if (!e._id) e._id = ++this.nid; return [e._id, COOP_TYPES.indexOf(e.type), ri(e.pos.x), ri(e.pos.y), r1(e.hp), r1(e.maxHp), ri(e.radius), ri(g.shieldOf(e)), ri(e.maxShield || 0), e.charge > 0 ? r1(e.charge) : 0, r1(e.lockA || 0), r1(e.snipeP || 0)]; });
@@ -5711,6 +5718,7 @@ const coop = {
     },
     onWorld(d) {
         let S; try { S = JSON.parse(d.s); } catch (e) { return; }
+        if (S && S.mid !== undefined && S.mid !== this.mid) return;   // 上一場留在房間文件裡的舊畫面／舊結算：不是這一場的，一律忽略（否則再來一場時，隊員一開場就被舊的結算踢出戰場）
         if (S && S.fin && this.room && this.room.started && !this.ended) { this.finish(S.fin); return; }
         if (!S || S.q <= (this.lastQ || 0) || !this.room || !this.room.started || this.ended) return;
         if (this._cm !== this.mid) { this._cm = this.mid; this.castSeen = 0; }
@@ -5887,7 +5895,7 @@ const coop = {
             if (this.room) {   // 結算結果要確保每位隊員都收到：房間文件失敗會重試，並同時從「戰場畫面」通道再送一份
                 const ref = online.roomRef(this.room.code), code = this.room.code, send = n => { try { if (!this.room || this.room.code !== code) return; ref.update({ state: 'ended', result: res }).catch(() => { if (n < 5) setTimeout(() => send(n + 1), 1200 * (n + 1)); }); } catch (e) { if (n < 5) setTimeout(() => send(n + 1), 1200 * (n + 1)); } };
                 send(0);
-                const fin = () => { try { ref.collection('pos').doc('world').set({ s: JSON.stringify({ q: ++this.seq, fin: res }), q: this.seq, t: Date.now() }).catch(() => {}); } catch (e) {} };
+                const fin = () => { try { ref.collection('pos').doc('world').set({ s: JSON.stringify({ q: ++this.seq, mid: this.mid, fin: res }), q: this.seq, t: Date.now() }).catch(() => {}); } catch (e) {} };
                 fin(); setTimeout(fin, 1500); setTimeout(fin, 4000);
             }
         } catch (e) {}
@@ -5913,7 +5921,7 @@ const coop = {
             <p style="margin:4px 0 8px">到達第 ${r.twin ? TWIN_LET[r.st - 1] : r.st + 9} 關　團隊${r.twin ? '雙星幣' : '銀河幣'} <b style="color:#ffd700">${num(r.pool)}</b></p>${coopClrHtml(r)}
             <table style="width:100%;border-collapse:collapse;text-align:center;font-size:.85rem;line-height:1.35"><tr style="color:#9ab"><th style="text-align:left">隊員</th><th>承受傷害</th><th>輸出傷害</th><th>蒐集字卡</th><th>貢獻比</th><th>${r.twin ? '雙星幣' : '銀河幣'}</th></tr>${rows}</table>
             <p class="muted" style="margin:8px 0">貢獻比＝承受傷害 45%＋輸出傷害 35%＋蒐集字卡 20%（各項看你占全隊的比例），再保留 15% 出席保底${mine ? '' : '。你中途離開，沒有銀河幣'}。</p>
-            ${mine ? (r.twin ? `<p style="color:#ffd700">你獲得 <b>${num(mine.coins)}</b> 雙星幣，持有 ${num(G.twinCoins)}。雙星幣的商店之後的版本開放。</p>` : `<p style="color:#ffd700">你獲得 <b>${num(mine.coins)}</b> 銀河幣，持有 ${num(G.galaxy)}。可到「戰機管理」突破等級上限。</p>`) : ''}
+            ${mine ? (r.twin ? `<p style="color:#ffd700">你獲得 <b>${num(mine.coins)}</b> 雙星幣，持有 ${num(G.twinCoins)}。</p>` : `<p style="color:#ffd700">你獲得 <b>${num(mine.coins)}</b> 銀河幣，持有 ${num(G.galaxy)}。可到「戰機管理」突破等級上限。</p>`) : ''}
             <button class="btn btn-start" onclick="coop.again()">回到房間</button><button class="btn" onclick="coop.toLobby()">返回大廳</button></div>`);
     },
     again() {

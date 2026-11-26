@@ -443,10 +443,15 @@ document.addEventListener('keydown', e => { const t = e.target; if (t && (t.tagN
 // ===== 等比例縮放：遊戲以「虛擬世界」(寬 ≥ 540、高 900 為基準) 運作，畫布再等比例放大到實際螢幕 =====
 // ★ 版本號格式：日期＋英文字母，如 20261116a 是當天第一版、20261116b 是第二版（較新）。
 // ★ 不要手動修改！請在專案資料夾執行  node release.js  ，它會自動產生新版本號、同步 sw.js、並更新 version.json（檔案清單與雜湊值）。
-const APP_VERSION = '20261126i', APP_AUTHOR = '郭柏宏';
+const APP_VERSION = '20261126j', APP_AUTHOR = '郭柏宏';
 // 版本更新紀錄（大廳「版本更新紀錄」磚會顯示）。★每次發佈新版本：在最上面加一筆 { v: '版本號', items: [重點條列] }；只顯示最近 5 筆，更舊的會自動被擠掉（CHANGE_KEEP）
 const CHANGE_KEEP = 5;
 const CHANGELOG = [
+    { v: '20261126j', items: [
+        '軍械商店新增「好友羈絆禮物」：雪中送炭卷軸（1000 暗物質，羈絆值 +1）、傾囊相助之證（5000 暗物質，+5）、兩肋插刀徽章（10000 暗物質，+10）。',
+        '羈絆禮物每天（台灣時間 0:00 更新）只能買一種，商店會顯示倒數計時器；不受每日羈絆值上限（+5）限制。',
+        '新手教學新增「好友羈絆禮物」圖文說明。',
+    ] },
     { v: '20261126i', items: [
         '手機橫放時，成語招式彈窗（連線多人與單機）放大，字體與卡片比之前更好閱讀。',
     ] },
@@ -3484,7 +3489,7 @@ const online = window.online = {
     readMirror() { try { return JSON.parse(localStorage.getItem(MIRROR) || 'null'); } catch (e) { return null; } },
     writeMirror() {
         const uid = this.user ? this.user.uid : this.offlineUid; if (!uid || !this.profile) return;
-        const keys = ['bestScore', 'totalDM', 'spentDM', 'pkWins', 'pkLosses', 'bestClearMs', 'clearAt', 'clearKey', 'tutorialDone', 'shipUse', 'topShip', 'clearShip', 'totalGalaxy', 'spentGalaxy', 'galaxy', 'cl', 'cClearMs', 'cClearKey', 'cClearShip', 'cClearMates', ...[1, 2, 3, 4, 5, 6, 7, 8, 9].flatMap(n => ['s' + n + 'Ms', 's' + n + 'Key', 's' + n + 'Ship', 'c' + n + 'Ms', 'c' + n + 'Key', 'c' + n + 'Ship', 'c' + n + 'Mates'])], pr = {}; keys.forEach(k => { if (this.profile[k] !== undefined) pr[k] = this.profile[k]; });
+        const keys = ['bestScore', 'totalDM', 'spentDM', 'pkWins', 'pkLosses', 'bestClearMs', 'clearAt', 'clearKey', 'tutorialDone', 'bsDay', 'bsItem', 'shipUse', 'topShip', 'clearShip', 'totalGalaxy', 'spentGalaxy', 'galaxy', 'cl', 'cClearMs', 'cClearKey', 'cClearShip', 'cClearMates', ...[1, 2, 3, 4, 5, 6, 7, 8, 9].flatMap(n => ['s' + n + 'Ms', 's' + n + 'Key', 's' + n + 'Ship', 'c' + n + 'Ms', 'c' + n + 'Key', 'c' + n + 'Ship', 'c' + n + 'Mates'])], pr = {}; keys.forEach(k => { if (this.profile[k] !== undefined) pr[k] = this.profile[k]; });
         let sv = null; try { sv = JSON.parse(localStorage.getItem(SAVEKEY) || 'null'); } catch (e) {}
         try { localStorage.setItem(MIRROR, JSON.stringify({ uid, username: this.profile.username, name: this.profile.name, profile: pr, save: sv, dirty: !!(this.offline || this._dirty), updatedAt: Date.now() })); } catch (e) {}
     },
@@ -4265,10 +4270,39 @@ const online = window.online = {
                 <div class="ad-sub">能力等級（上限）</div><div class="ad-grid">${K.map(([k, n]) => `<div class="ad-cell"><em>${n}</em>${stp(`online.adShip.bind(online,'${S.id}','${k}')`, f[k] + '/' + S.cap[k])}</div>`).join('')}</div>
                 <div class="ad-sub">銀河幣突破（0～${XMAX} 層）</div><div class="ad-grid ad-x">${K.map(([k, n]) => `<div class="ad-cell"><em>${n}</em>${stp(`online.adShip.bind(online,'${S.id}','x_${k}')`, (X[k] || 0) + '/' + XMAX)}</div>`).join('')}</div>
                 <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap"><button class="sm" onclick="online.adShip('${S.id}','max')">能力全部升滿</button><button class="sm" onclick="online.adShip('${S.id}','maxx')">突破全滿</button><button class="sm" onclick="online.adShip('${S.id}','clrx')">清除突破</button></div></details>`; }).join('')}
+            <div class="ad-box"><b>好友羈絆值（手動調整）</b><div id="ad-bonds" class="muted" style="margin-top:6px">載入中…</div></div>
             <div class="row" style="gap:6px;margin:6px 0"><b>密碼</b><span id="ad-pw" style="font-family:monospace;letter-spacing:.1em;min-width:120px">${T.pwShow ? esc(T.pwShow) : '••••••••'}</span><button class="sm" onclick="online.adTogglePw()">${T.pwShow ? '隱藏密碼' : '顯示密碼'}</button></div>
             <div style="margin:10px 0;padding:8px;border:1px solid #522;border-radius:8px"><b>黑名單／停權</b>
                 ${T.ban ? `<button class="sm" onclick="online.adUnban()">解除停權</button>` : `<textarea class="inp" id="ad-reason" rows="2" maxlength="200" placeholder="輸入被封原因（玩家登入時會看到）"></textarea><button class="sm red" onclick="online.adBan()">加入黑名單</button>`}</div>
             <button class="sm red" onclick="online.adReset()">重置此帳號（回到全新狀態）</button> <button class="sm red" onclick="online.adDelete()">刪除此帳號</button>`;
+        this.adBondsLoad();
+    },
+    async adBondsLoad(force) {   // 讀出這個玩家的好友與彼此的羈絆值（只讀一次，之後用快取重畫）
+        const T = this._adT; if (!T) return; const adb = this.adminDb || db;
+        if (!T.bonds || force) {
+            try {
+                const [fs, bs] = await Promise.all([adb.collection('users').doc(T.uid).collection('friends').get(), adb.collection('bonds').where('members', 'array-contains', T.uid).get()]);
+                if (this._adT !== T) return;
+                const pm = {}; bs.docs.forEach(x => { const p = ((x.data().members) || []).find(m => m !== T.uid); if (p) pm[p] = x.data().pts | 0; });
+                const rows = fs.docs.map(x => ({ uid: x.id, name: x.data().name || x.id, pts: pm[x.id] | 0 }));
+                Object.keys(pm).forEach(p => { if (!rows.some(r => r.uid === p)) rows.push({ uid: p, name: p + '（已非好友）', pts: pm[p] }); });
+                T.bonds = rows;
+            } catch (e) { const b = $('ad-bonds'); if (b) b.textContent = errMsg(e); return; }
+        }
+        this.adBondsDraw();
+    },
+    adBondsDraw() {
+        const T = this._adT, b = $('ad-bonds'); if (!T || !b || !T.bonds) return;
+        b.innerHTML = T.bonds.length ? T.bonds.map((r, i) => `<div class="row" style="gap:6px;margin:2px 0"><span style="min-width:110px;color:#dde">${esc(r.name)}</span><b style="color:#ffd166;min-width:4.5em">⭐ ${r.pts}</b><input class="inp" id="ad-bi${i}" type="number" min="0" value="${r.pts}" style="margin:0;width:90px"><button class="sm" onclick="online.adBondSet(${i})">設定</button><button class="sm" onclick="online.adBondAdd(${i},-1)">−1</button><button class="sm" onclick="online.adBondAdd(${i},1)">＋1</button></div>`).join('') : '這個玩家還沒有好友';
+    },
+    adBondAdd(i, d) { const r = ((this._adT || {}).bonds || [])[i]; if (r) this.adBondWrite(i, r.pts + d); },
+    adBondSet(i) { const el = $('ad-bi' + i), n = Math.floor(Number(el && el.value)); if (!isFinite(n) || n < 0) return toast('請輸入 0 以上的整數'); this.adBondWrite(i, n); },
+    async adBondWrite(i, v) {
+        const T = this._adT, r = T && (T.bonds || [])[i], adb = this.adminDb || db, m = $('ad-umsg'); if (!r) return;
+        if (!this.adminDb && !this.isAdmin) { toast('只有管理員可以執行這個操作'); return; }
+        v = Math.max(0, Math.min(99999, Math.floor(v))); const ids = [T.uid, r.uid].sort();
+        try { await adb.collection('bonds').doc(ids.join('_')).set({ members: ids, pts: v }, { merge: true }); r.pts = v; if (m) m.textContent = `已把與 ${r.name} 的羈絆值設為 ${v}`; this.adBondsDraw(); }
+        catch (e) { if (m) m.textContent = /permission|insufficient/i.test(String(e && (e.code || e.message))) ? '沒有權限：請把最新的 firestore.rules 貼到 Firebase 主控台並發佈' : errMsg(e); }
     },
     async adWrite(extra, okMsg) {
         const T = this._adT, adb = this.adminDb || db, m = $('ad-umsg'); if (!T) return; if (!this.adminDb && !this.isAdmin) { toast('只有管理員可以執行這個操作'); return; }
@@ -4312,7 +4346,7 @@ const online = window.online = {
     },
     async adReset() {
         const T = this._adT; if (!T || !confirm('確定要把這個帳號重置回全新狀態嗎？（存檔、暗物質、戰機、分數統計都會清空）')) return;
-        const del = firebase.firestore.FieldValue.delete(), z = { save: del, darkMatter: 0, bestScore: 0, totalDM: 0, spentDM: 0, pkWins: 0, pkLosses: 0, bestClearMs: del, clearAt: del, clearKey: del, tutorialDone: false };
+        const del = firebase.firestore.FieldValue.delete(), z = { save: del, darkMatter: 0, bestScore: 0, totalDM: 0, spentDM: 0, pkWins: 0, pkLosses: 0, bestClearMs: del, clearAt: del, clearKey: del, tutorialDone: false, bsDay: del, bsItem: del };
         for (let n = 1; n <= 9; n++) { z['s' + n + 'Ms'] = del; z['s' + n + 'Key'] = del; z['s' + n + 'Ship'] = del; z['c' + n + 'Ms'] = del; z['c' + n + 'Key'] = del; z['c' + n + 'Ship'] = del; z['c' + n + 'Mates'] = del; }
         Object.assign(z, { cl: del, cClearMs: del, cClearKey: del, cClearShip: del, cClearMates: del, totalGalaxy: 0, spentGalaxy: 0, galaxy: 0 });
         if (await this.adWrite(z, '帳號已重置')) { await this.adLoad(T.uid); }
@@ -4449,6 +4483,85 @@ const online = window.online = {
     },
 
 
+    // ===== 羈絆禮物商店：用暗物質送好友羈絆值。每天（台灣時間 0:00 換日）只能買一種；不受 BOND_DAY 每日上限限制 =====
+    BOND_SHOP: [
+        { k: 'a', name: '雪中送炭卷軸', cost: 1000, pts: 1, c: '#7ad7ff' },
+        { k: 'b', name: '傾囊相助之證', cost: 5000, pts: 5, c: '#ffd166' },
+        { k: 'c', name: '兩肋插刀徽章', cost: 10000, pts: 10, c: '#ff6b6b' }],
+    bsIcon(k) {
+        return ({
+            a: '<svg viewBox="0 0 64 64"><rect x="12" y="12" width="40" height="38" rx="3" fill="#f3e2b3" stroke="#8a6a2a" stroke-width="2"/><rect x="8" y="8" width="48" height="8" rx="4" fill="#d9b86a" stroke="#8a6a2a" stroke-width="2"/><rect x="8" y="46" width="48" height="8" rx="4" fill="#d9b86a" stroke="#8a6a2a" stroke-width="2"/><g stroke="#3a9ad9" stroke-width="2" stroke-linecap="round"><path d="M32 21v16M24 25l16 8M40 25l-16 8"/></g><circle cx="32" cy="43" r="3" fill="#ff7a00"/></svg>',
+            b: '<svg viewBox="0 0 64 64"><path d="M25 36l-5 22 12-7 12 7-5-22z" fill="#d94a4a"/><rect x="8" y="8" width="48" height="36" rx="3" fill="#fff3c4" stroke="#d4a017" stroke-width="3"/><rect x="13" y="13" width="38" height="26" rx="2" fill="none" stroke="#d4a017" stroke-width="1.5" stroke-dasharray="3 2"/><circle cx="32" cy="26" r="10" fill="#ffd166" stroke="#d4a017" stroke-width="2"/><text x="32" y="32" font-size="14" font-weight="bold" text-anchor="middle" fill="#8a4b00" font-family="serif">證</text></svg>',
+            c: '<svg viewBox="0 0 64 64"><path d="M32 4l23 8v17c0 14-9 25-23 31C18 54 9 43 9 29V12z" fill="#b3202a" stroke="#ffd166" stroke-width="3"/><g stroke="#fff" stroke-width="4" stroke-linecap="round"><path d="M20 19l24 24M44 19L20 43"/></g><circle cx="32" cy="31" r="5" fill="#ffd166" stroke="#8a4b00" stroke-width="1.5"/></svg>'
+        })[k] || '';
+    },
+    twDay(ms) { const d = new Date((ms === undefined ? Date.now() : ms) + 8 * 3600e3); return d.getUTCFullYear() * 10000 + (d.getUTCMonth() + 1) * 100 + d.getUTCDate(); },   // 台灣時間（UTC+8）的日期代號，與裝置時區無關
+    twLeft() { const n = Date.now() + 8 * 3600e3; return (Math.floor(n / 864e5) + 1) * 864e5 - n; },   // 距離下一個台灣時間 0:00 的毫秒數
+    bsClock() { const s = Math.max(0, Math.floor(this.twLeft() / 1000)), p = n => String(n).padStart(2, '0'); return `${p(s / 3600 | 0)}:${p((s % 3600) / 60 | 0)}:${p(s % 60)}`; },
+    bsBought() { const p = this.profile; return p && p.bsDay === this.twDay() ? (p.bsItem || 'x') : null; },   // 今天買了哪一種（沒買＝null）
+    bsHtml() {
+        const bought = this.bsBought(), off = !this.user || this.offline || this.free, dm = G.darkMatter | 0;
+        const rows = this.BOND_SHOP.map(it => {
+            const dis = off || !!bought || dm < it.cost;
+            const sub = bought === it.k ? '今日已購買' : bought ? '今日已購買其他羈絆禮物，明天再來' : `${it.cost} DM・與選定好友的羈絆值 +${it.pts}${dm < it.cost ? '（暗物質不足）' : ''}`;
+            return `<button class="btn btn-shop shop-row" style="font-size:0.85rem;padding:6px 8px;margin:4px auto;width:100%" ${dis ? 'disabled' : ''} onclick="online.bsPick('${it.k}')"><span class="shop-ic" style="border-color:${it.c}">${this.bsIcon(it.k)}</span><span class="shop-tx">${it.name}<br><small>${sub}</small></span></button>`;
+        }).join('');
+        return `<div id="bs-box" style="margin:10px auto;padding:6px 8px;border:1px solid rgba(255,209,102,.5);border-radius:12px;width:min(92vw,520px);background:rgba(255,209,102,.06);box-sizing:border-box">
+            <div style="color:var(--neon-gold);font-size:0.9rem">好友羈絆禮物（每天限購一種）</div>
+            <div style="font-size:.8rem;color:#bcd;margin:2px 0 4px">台灣時間每日 0:00 更新・距離更新 <b id="bs-cd" style="color:#7dffb0;font-variant-numeric:tabular-nums">${this.bsClock()}</b>${off ? '<br><span style="color:#ff9a9a">需要登入並連線才能購買</span>' : bought ? '<br><span style="color:#ffb347">今天已經買過了，倒數結束後可再購買</span>' : ''}</div>
+            ${rows}<div class="muted" style="font-size:.75rem;text-align:left;line-height:1.5">購買時要選一位好友，你們的羈絆值立即增加，不受每日 +${this.BOND_DAY} 上限限制。購買後不能退還。</div></div>`;
+    },
+    bsStart() {   // 倒數計時器：每秒更新；台灣時間換日時自動重畫商店
+        clearInterval(this._bsT); this._bsDay = this.twDay();
+        this._bsT = setInterval(() => {
+            const el = $('bs-cd');
+            if (!el || G.gameState !== 'SHOP') { clearInterval(this._bsT); this._bsT = null; return; }
+            if (this.twDay() !== this._bsDay) { G.keepScroll(() => G.renderShop()); return; }
+            el.textContent = this.bsClock();
+        }, 1000);
+    },
+    bsPick(k) {
+        const it = this.BOND_SHOP.find(x => x.k === k); if (!it || this._bsBusy) return;
+        if (!this.user || this.offline || this.free) return toast('需要登入並連線才能購買');
+        if (this.bsBought()) return toast('今天已經購買過羈絆禮物了');
+        if ((G.darkMatter | 0) < it.cost) return toast('暗物質不足');
+        if (!this.friends.length) return G.dialog(`<h3>還沒有好友</h3><p style="line-height:1.6">羈絆禮物要送給好友。請先到大廳的「好友」加好友再來購買。</p><button class="btn btn-start" onclick="game.closeDlg()">我知道了</button>`);
+        const opts = this.friends.map(f => `<option value="${esc(f.uid)}">${esc(f.name)}　⭐${this.bondPts(f.uid)}</option>`).join('');
+        G.dialog(`<h3 style="color:${it.c}">${it.name}</h3><div style="width:64px;height:64px;margin:0 auto">${this.bsIcon(k)}</div>
+            <p style="line-height:1.6">花費 <b>${it.cost} DM</b>，與選定好友的羈絆值 <b style="color:#ffd166">+${it.pts}</b>。<br><span style="color:#ffb347">每天只能買一種，買了今天就不能再買其他羈絆禮物，也不能退還。</span></p>
+            <select id="bs-fr" class="inp">${opts}</select>
+            <button class="btn btn-start" onclick="online.bsBuy('${k}')">確認購買</button><button class="btn" onclick="game.closeDlg()">取消</button>`);
+    },
+    async bsBuy(k) {
+        const it = this.BOND_SHOP.find(x => x.k === k), sel = $('bs-fr'), peer = sel && sel.value; if (!it || !peer || this._bsBusy) return;
+        const f = this.friends.find(x => x.uid === peer); if (!f || !this.user || this.offline || this.free || !db) return;
+        if (this.bsBought()) { G.closeDlg(); return toast('今天已經購買過羈絆禮物了'); }
+        if ((G.darkMatter | 0) < it.cost) { G.closeDlg(); return toast('暗物質不足'); }
+        this._bsBusy = true; const day = this.twDay(), me = this.user.uid;
+        try {
+            const uref = db.collection('users').doc(me), bref = db.collection('bonds').doc(this.dmId(peer));
+            const txf = async tx => {   // 同一筆交易：確認今天還沒買（以伺服器上的紀錄為準）＋記錄今天已買＋增加羈絆值
+                const us = await tx.get(uref), bs = await tx.get(bref);
+                if ((us.exists ? us.data() : {}).bsDay === day) throw new Error('BS_DONE');
+                tx.set(uref, { bsDay: day, bsItem: k }, { merge: true });
+                tx.set(bref, { members: [me, peer].sort(), pts: ((bs.exists ? bs.data().pts : 0) | 0) + it.pts }, { merge: true });
+            };
+            try { await db.runTransaction(txf); }
+            catch (e0) {   // 第一次建立羈絆文件被規則擋下時，沿用聊天羈絆的做法：先建立空文件再重試一次
+                if ((e0 && e0.message) === 'BS_DONE' || !/permission|insufficient/i.test(String(e0 && (e0.code || e0.message))) || (this._bondInit && this._bondInit[bref.id])) throw e0;
+                (this._bondInit = this._bondInit || {})[bref.id] = 1;
+                await bref.set({ members: [me, peer].sort(), pts: firebase.firestore.FieldValue.increment(0) }, { merge: true });
+                await db.runTransaction(txf);
+            }
+            this.profile.bsDay = day; this.profile.bsItem = k;
+            G.darkMatter = Math.max(0, (G.darkMatter | 0) - it.cost); this.stat('spentDM', it.cost); G.save(); clearTimeout(this._pt); this.pushNow();
+            G.closeDlg(); try { sfx.playBuy(); } catch (_) {}
+            G.upToast(`已送出「${it.name}」給 ${esc(f.name)}，羈絆值 +${it.pts}`); G.keepScroll(() => G.renderShop());
+        } catch (e) {
+            if (e && e.message === 'BS_DONE') { this.profile.bsDay = day; this.profile.bsItem = 'x'; G.closeDlg(); toast('今天已經購買過羈絆禮物了（可能是在另一台裝置）'); G.keepScroll(() => G.renderShop()); }
+            else { console.warn('bondShop', e); toast(/permission|insufficient/i.test(String(e && (e.code || e.message))) ? '購買被拒絕：請把最新的 firestore.rules 貼到 Firebase 主控台並發佈' : '購買失敗：' + errMsg(e), 6000); }
+        } finally { this._bsBusy = false; }
+    },
     // ===== 新手教學 =====
     tut: 0,
     renderTutorial(i) {
@@ -4467,6 +4580,11 @@ const online = window.online = {
             ['血條與護盾', `${im('assets/player.png', 'max-height:80px')}<div style="width:90px"><div style="height:8px;background:#33ff88"></div><div style="height:6px;margin-top:3px;background:#4dd2ff;width:60%"></div></div>`, '血條在戰機後方，護盾在血條下方；受到傷害時護盾先抵掉。敵機的血條在它上方。'],
             ['敵機與 Boss', `${im('assets/enemy_scout.png', 'max-height:70px')}${im('assets/enemy_bomber.png', 'max-height:70px')}${im('assets/boss_1.png', 'max-height:110px')}`, `小關有多種敵機（俯衝、蜂群、狙擊、轟炸、護衛…）。Boss 各有名字與類型：${bossLabel(1)}皮薄但傷害高、${bossLabel(2)}血厚、${bossLabel(3)}彈幕密集。`],
             ['暗物質、軍械商店與戰機', `${im('assets/ship_wind.png', 'max-height:80px')}${im('assets/ship_bastion.png', 'max-height:80px')}${im('assets/ship_blaze.png', 'max-height:80px')}`, '打敗敵人得到暗物質，可到「軍械商店」買戰機，到「戰機管理」升級；每種戰機能力上限不同。出戰前大廳會推薦適合的戰機。'],
+            ['好友羈絆禮物（軍械商店）', `<div style="width:100%;max-width:430px;display:flex;flex-direction:column;gap:6px">
+                ${box(`<div style="display:flex;justify-content:space-between;align-items:center;font-size:.85rem"><span style="color:var(--neon-gold)">好友羈絆禮物（每天限購一種）</span><span class="muted">更新倒數 <b style="color:#7dffb0">05:42:10</b></span></div>`, 'rgba(255,209,102,.5)')}
+                ${this.BOND_SHOP.map(it => `<div style="display:flex;align-items:center;gap:10px;border:1px solid ${it.c};border-radius:10px;padding:4px 10px;background:rgba(10,14,40,.7)"><span class="shop-ic" style="border-color:${it.c}">${this.bsIcon(it.k)}</span><span style="flex:1;text-align:left;line-height:1.4"><b>${it.name}</b><br><small class="muted">${it.cost} 暗物質</small></span><b style="color:#ffd166;white-space:nowrap">⭐ +${it.pts}</b></div>`).join('')}
+                <div style="display:flex;justify-content:center;align-items:center;gap:6px;flex-wrap:wrap;margin-top:2px">${chip('① 選禮物', '#ffd166')}<span>➜</span>${chip('② 選好友', '#7dffb0')}<span>➜</span>${chip('③ 羈絆值增加', '#ff9ac2')}</div></div>`,
+                `到「軍械商店」最上方的<b>好友羈絆禮物</b>，用暗物質送禮給好友，你們的羈絆值會立刻增加：雪中送炭卷軸 1000 暗物質（+1）、傾囊相助之證 5000 暗物質（+5）、兩肋插刀徽章 10000 暗物質（+10）。<br><b style="color:#ffd166">附註：</b><br>①每天只能買<b>一種</b>：買了雪中送炭卷軸，就不能再買傾囊相助之證和兩肋插刀徽章。<br>②每日<b>台灣時間 0:00</b> 更新，商店裡會顯示倒數計時器。<br>③這類禮物<b>不受</b>「聊天與組隊每天最多 +${this.BOND_DAY}」的限制，是快速累積羈絆值的方法（雙星挑戰需要羈絆值滿 ${TWIN_BOND}）。<br>④需要登入並連線；購買時要先選一位好友，購買後不能退還。`],
             ['闖關流程（單人）', `<div style="width:100%;text-align:center"><div style="display:flex;justify-content:center;align-items:center;gap:6px;flex-wrap:wrap">${chip('區塊 1-1')}<span>➜</span>${chip('區塊 1-2')}<span>➜</span>${chip('WARNING', '#ff5a5a')}${im('assets/boss_1.png', 'max-height:60px;max-width:60px')}</div>
                 <div style="display:flex;justify-content:center;gap:6px;margin-top:10px;flex-wrap:wrap">${stg(1)}${stg(2)}${stg(3, 1)}${stg(4, 0, 1)}</div><div class="muted" style="margin-top:6px;font-size:.8rem">◀ ▶（或鍵盤 ← →）選擇出發關卡，最高只能選到已解鎖的關卡</div></div>`,
                 `每一關分成 3 個區塊：前兩個區塊（例如 1-1、1-2）會不斷出現敵機與字卡，邊打邊湊成語；第 3 個區塊 Boss 登場。擊敗 Boss 就解鎖下一關，共 9 關，第 9 關是最終 Boss「${bossLabel(9)}」。出擊前可以在大廳換戰機、按 <kbd>R</kbd> 套用推薦戰機，戰機的屬性相剋會顯示在關卡卡片上。血量歸零就結束本次出擊。`],
@@ -4807,6 +4925,7 @@ wrap('setState', function (o, state) {
     if (state === 'GAMEOVER') online.finishRun(false); else if (state === 'VICTORY') online.finishRun(true);
 });
 wrap('renderLobby', function (o) { if (online._pendingAdmin && !['PLAYING', 'TRANSITION'].includes(this.gameState)) { const d = online._pendingAdmin; online._pendingAdmin = null; online.applyAdminDoc(d); this.renderLobby(); return; } o.call(this); const t = document.querySelector('.tiles'); if (t) t.insertAdjacentHTML('beforeend', online.extraTiles()); });
+wrap('renderShop', function (o) { o.call(this); const p = this.uiLayer.querySelector('.menu-overlay > p'); if (p) p.insertAdjacentHTML('afterend', online.bsHtml()); online.bsStart(); });   // 軍械商店：加上「好友羈絆禮物」區塊與倒數計時器
 wrap('draw', function (o) { o.call(this); if (this.pkMode && this.gameState === 'PLAYING' && online.pk) online.drawGhost(this.ctx); });
 wrap('save', function (o) { if (this._pkFleet && this._realFleet) { const f = this.fleet, mg = this.magnetLvl, sl = this.maxSlots; this.fleet = this._realFleet; if (this._realMg !== undefined && this._realMg !== null) { this.magnetLvl = this._realMg; this.maxSlots = this._realSl; } try { o.call(this); } finally { this.fleet = f; this.magnetLvl = mg; this.maxSlots = sl; } } else o.call(this); online.queuePush(); });   // PK 期間存檔一律存真實進度，不會把 PK 用的 3 級數值存進去
 wrap('dropDarkMatter', function (o, ...a) { const b = this.darkMatter; o.apply(this, a); const d = this.darkMatter - b; if (d > 0) online.stat('totalDM', d); });

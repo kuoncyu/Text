@@ -1,0 +1,124 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+    // 管理員：用「管理員帳號的 Email」判斷（在遊戲「關於」頁輸入管理員密碼登入的就是這個帳號）；
+    // 也相容舊做法：admins 集合裡有該 UID 的文件也算管理員。
+    function isAdmin() { return signedIn() && (request.auth.token.email == 'admin@idiom-fighter.app' || exists(/databases/$(database)/documents/admins/$(request.auth.uid))); }
+
+    // 全域設定：任何人都能讀（註冊前要先確認是否開放註冊），只有管理員能改。regClosed=true 表示停止註冊新帳號
+    function regClosed() { return exists(/databases/$(database)/documents/config/app) && get(/databases/$(database)/documents/config/app).data.get('regClosed', false) == true; }   // 文件不存在＝開放註冊
+    match /config/{id} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // 黑名單：只有管理員可以新增／移除；玩家只能讀自己的那一筆（登入時用來判斷是否被停權）
+    match /banned/{uid} {
+      allow get: if signedIn() && (request.auth.uid == uid || isAdmin());
+      allow list: if isAdmin();
+      allow write: if isAdmin();
+    }
+    function notBanned() { return !exists(/databases/$(database)/documents/banned/$(request.auth.uid)) && !exists(/databases/$(database)/documents/deleted/$(request.auth.uid)); }
+
+    // 已刪除的帳號：管理員刪除玩家時寫入；該帳號之後不能再寫入任何資料，下次登入時遊戲會自動把「登入帳號」本身也刪掉
+    match /deleted/{uid} {
+      allow get: if signedIn() && (request.auth.uid == uid || isAdmin());
+      allow list: if isAdmin();
+      allow create, update, delete: if isAdmin();
+    }
+
+    // 管理員名單：只能在 Firebase 後台手動新增，玩家端不可寫入
+    match /admins/{uid} {
+      allow read: if signedIn() && request.auth.uid == uid;
+      allow write: if false;
+    }
+
+    // 帳號密碼紀錄：玩家登入時只能寫入自己的那一筆（讀不回來），只有管理員能讀／刪；管理員介面按「顯示密碼」才會讀取
+    match /creds/{uid} {
+      allow create, update: if signedIn() && request.auth.uid == uid;
+      allow get, list: if isAdmin();
+      allow delete: if signedIn() && (request.auth.uid == uid || isAdmin());   // 玩家自己刪除帳號時，一併刪掉自己的密碼紀錄
+    }
+
+    // 玩家資料（排行榜需要讀取名稱與統計）
+    match /users/{uid} {
+      allow read: if signedIn();
+      allow create: if signedIn() && ((request.auth.uid == uid && notBanned() && !regClosed()) || isAdmin());   // 管理員停止註冊時，新帳號建不起玩家資料
+      allow update: if signedIn() && ((request.auth.uid == uid && notBanned()) || isAdmin());
+      allow delete: if signedIn() && (request.auth.uid == uid || isAdmin());   // 只能刪除自己的玩家資料（玩家自己刪帳號）；刪除別人的帳號只有管理員
+      match /friends/{fid} { allow read: if signedIn() && (request.auth.uid == uid || isAdmin()); allow write: if signedIn() && request.auth.uid == uid; allow delete: if signedIn() && (request.auth.uid == fid || isAdmin()); }   // 管理員要能讀出好友清單才能刪除帳號；玩家刪除自己的帳號時，可把自己（fid）從別人的好友清單移除
+      match /invites/{code} {
+        allow read, delete: if signedIn() && (request.auth.uid == uid || isAdmin());
+        allow create: if signedIn() && request.resource.data.fromUid == request.auth.uid;
+      }
+    }
+
+    // 好友邀請
+    match /friendRequests/{id} {
+      allow read: if signedIn() && (resource.data.from == request.auth.uid || resource.data.to == request.auth.uid || isAdmin());
+      allow create: if signedIn() && request.resource.data.from == request.auth.uid;
+      allow update: if signedIn() && (resource.data.to == request.auth.uid || resource.data.from == request.auth.uid);
+      allow delete: if signedIn() && (resource.data.to == request.auth.uid || resource.data.from == request.auth.uid || isAdmin());
+    }
+
+    // 上線狀態（5 分鐘內有活動＝在線）：只能寫自己的，登入者都能讀
+    match /presence/{uid} {
+      allow read: if signedIn();
+      allow write: if signedIn() && request.auth.uid == uid && notBanned();
+      allow delete: if signedIn() && (request.auth.uid == uid || isAdmin());
+    }
+
+    // 大廳聊天
+    match /lobbyChat/{id} {
+      allow read: if signedIn();
+      allow create: if signedIn() && notBanned() && request.resource.data.uid == request.auth.uid && request.resource.data.text.size() <= 200;
+    }
+
+    // 好友私訊（文件 ID = 兩位玩家 uid 排序後用底線相連；管理員可讀）
+    match /dms/{dmId} {
+      allow read: if signedIn() && (request.auth.uid in dmId.split('_') || isAdmin());
+      allow create, update: if signedIn() && request.auth.uid in dmId.split('_');
+      match /messages/{mid} {
+        allow read: if signedIn() && (request.auth.uid in dmId.split('_') || isAdmin());
+        allow create: if signedIn() && request.auth.uid in dmId.split('_')
+                      && request.resource.data.uid == request.auth.uid && request.resource.data.text.size() <= 200;
+      }
+    }
+
+    // 羈絆值（文件 ID = 兩位玩家 uid 排序後用底線相連；雙方可讀寫，每次寫入最多 +10（羈絆禮物最高 +10；聊天／組隊每次 +1），管理員可任意調整）
+    match /bonds/{pid} {
+      allow read: if signedIn() && (resource == null ? request.auth.uid in pid.split('_') : (request.auth.uid in resource.data.members || isAdmin()));   // 文件不存在時（第一次建立前）也要放行讀取，否則永遠建不起來
+      allow create: if signedIn() && ((notBanned() && request.auth.uid in pid.split('_') && request.resource.data.members.hasAll(pid.split('_')) && request.resource.data.pts <= 10) || isAdmin());
+      allow update: if signedIn() && ((notBanned() && request.auth.uid in resource.data.members && request.resource.data.pts <= resource.data.pts + 10) || isAdmin());
+      allow delete: if signedIn() && (request.auth.uid in resource.data.members || isAdmin());   // 雙方任一人（刪除帳號時）或管理員
+    }
+
+    // 群組聊天（成員與管理員可讀）
+    match /groups/{gid} {
+      allow read: if signedIn() && (request.auth.uid in resource.data.members || isAdmin());
+      allow create: if signedIn() && request.resource.data.owner == request.auth.uid && request.auth.uid in request.resource.data.members;
+      allow delete: if signedIn() && resource.data.owner == request.auth.uid;
+      allow update: if signedIn() && (resource.data.owner == request.auth.uid
+                    || (request.auth.uid in resource.data.members                                   // 一般成員只能「退出自己」：只動 members／memberNames，且只少掉自己一人
+                        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['members', 'memberNames'])
+                        && !(request.auth.uid in request.resource.data.members)
+                        && request.resource.data.members.size() == resource.data.members.size() - 1
+                    || (request.auth.uid in resource.data.members                                   // 一般成員也可以更新「自己」在名單裡的顯示名稱（改暱稱後同步）
+                        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['memberNames'])
+                        && request.resource.data.memberNames.diff(resource.data.memberNames).affectedKeys().hasOnly([request.auth.uid])));
+      match /messages/{mid} {
+        allow read: if signedIn() && (request.auth.uid in get(/databases/$(database)/documents/groups/$(gid)).data.members || isAdmin());
+        allow create: if signedIn() && request.auth.uid in get(/databases/$(database)/documents/groups/$(gid)).data.members
+                      && request.resource.data.uid == request.auth.uid && request.resource.data.text.size() <= 200;
+      }
+    }
+
+    // PK 房間（簡化規則：登入者即可讀寫；正式上線可再收緊）
+    match /rooms/{code} {
+      allow read, create, update, delete: if signedIn();
+      match /events/{eid} { allow read, create: if signedIn(); }
+      match /pos/{pid} { allow read, write: if signedIn(); }   // PK 面對面：雙方即時位置
+    }
+  }
+}
